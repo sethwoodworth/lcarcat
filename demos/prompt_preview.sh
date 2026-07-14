@@ -24,7 +24,7 @@ fill=$((mid - chipsW - AMOTIF))
 
 printf '\n'
 reserve 4
-placeC1 "$DIR/elbow-top.png" "$ELBOW" 4
+placeC1 "$DIR/elbow-top-left-9999ff-5x3cells-19x40pixels.png" "$ELBOW" 4
 
 # bar row 0 (top): chip colors blank + orange fill + Style-A PATH label (text on top) + pill
 printf '\033[%dG' $((ELBOW+1))
@@ -51,7 +51,7 @@ printf '   \033[38;2;136;187;136mbuild/\033[0m  README.md  main.py\n'
 
 # footer
 reserve 4
-placeC1 "$DIR/elbow-bottom.png" "$ELBOW" 4
+placeC1 "$DIR/elbow-bottom-left-9999ff-5x3cells-19x40pixels.png" "$ELBOW" 4
 printf '\033[3G'; fg "$DIM"; printf '↩ 17:15:43  ⏱ 4ms'; rst
 printf '\033[2B\033[%dG' $((ELBOW+1)); bg "$O"; sp "$mid"; rst; pill_at
 printf '\033[1B\033[%dG' $((ELBOW+1)); bg "$O"; sp "$mid"; rst

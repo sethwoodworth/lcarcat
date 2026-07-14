@@ -11,7 +11,8 @@
 -- split window's elbow shows its curve over the periwinkle separators / neighbour
 -- panes we can't paint. Assets are generated per (cell size, gutter width) and cached.
 --
--- Opt-in: `:LcarsCorner` toggles it. Off by default; the base theme is untouched.
+-- On by default: auto-enabled on VimEnter (once the UI is attached so image.nvim can
+-- read the cell size). `:LcarsCorner` toggles it off/on.
 
 local p = require("lcars.palette")
 local ok_image, image = pcall(require, "image")
@@ -46,10 +47,28 @@ local function cell_px()
 end
 
 -- One directory per (cell size, gutter width) so font/zoom changes never reuse a
--- stale-sized PNG. gen_swoops writes fixed PNG names (corner-tl, corner-bl, hcap-l,
--- hcap-r) into it; the channel caps are gutter-independent but land in every dir.
+-- stale-sized PNG. gen_swoops writes descriptive per-variant PNG names (see asset_name)
+-- into it; the channel caps are gutter-independent but land in every dir.
 local function asset_dir(stem) return cache_dir .. "/" .. state.cw .. "x" .. state.ch .. "-" .. stem end
 local function asset_path(name, stem) return asset_dir(stem) .. "/" .. name .. ".png" end
+
+-- Mirror of gen_swoops.py's asset_name(): rebuild the exact descriptive filename the
+-- generator writes for a variant so we read back the right one. Keep in lock-step with
+-- the Python version. Returns the base name WITHOUT ".png" (asset_path appends it).
+local function asset_name(kind, color, cols, rows, cellw, cellh, orient, facing, gap, bg)
+  orient = orient or "round"
+  facing = facing or "left"
+  local parts = { kind, orient, facing, color }
+  if bg then parts[#parts + 1] = "background" .. bg end
+  parts[#parts + 1] = cols .. "x" .. rows .. "cells"
+  parts[#parts + 1] = cellw .. "x" .. cellh .. "pixels"
+  if gap ~= nil then parts[#parts + 1] = "gap" .. gap end
+  return table.concat(parts, "-")
+end
+
+-- The corner elbows always render periwinkle over a baked-black backdrop; capture that
+-- so both the readiness check and the placements name the same file.
+local CHROME_COLOR, CHROME_BG = "9999ff", "000000"
 
 local function regenerate(stem, cb)
   local dir = asset_dir(stem)
@@ -68,7 +87,9 @@ local function regenerate(stem, cb)
   }, {
     on_exit = function(_, code)
       vim.schedule(function()
-        if code == 0 and vim.fn.filereadable(asset_path("corner-tl", stem)) == 1 then
+        local corner_tl = asset_name("corner", CHROME_COLOR, stem + 2, H,
+          state.cw, state.ch, "top", "left", nil, CHROME_BG)
+        if code == 0 and vim.fn.filereadable(asset_path(corner_tl, stem)) == 1 then
           state.gen[stem] = true
           cb(true)
         else
@@ -137,6 +158,18 @@ local function compute_placements()
   local infos = win_infos()
   local capcols = math.max(1, math.floor(state.ch / 2 / state.cw + 0.5))
 
+  -- Descriptive filenames matching gen_swoops.py. corner_name: the N-column elbow that
+  -- curves into a `stem`-wide gutter (2 image rows). channel_name: the 1-row round
+  -- separator caps, keyed by which edge rounds and the leading black gap width.
+  local function corner_name(stem, orient)
+    return asset_name("corner", CHROME_COLOR, stem + 2, H, state.cw, state.ch,
+      orient, "left", nil, CHROME_BG)
+  end
+  local function channel_name(facing, gap)
+    return asset_name("hcap", CHROME_COLOR, capcols, 1, state.cw, state.ch,
+      "round", facing, gap, CHROME_BG)
+  end
+
   -- Outer frame only: a single top-left corner (the editor's top-left window) and a
   -- single bottom-left corner (into the statusline). A gutterless window (netrw:
   -- textoff 0) has no stem to curve into, so its corner is a rounded left CAP on the
@@ -153,19 +186,19 @@ local function compute_placements()
 
   if main_stem == 0 then -- gutterless top-left window -> cap the tabline bar
     state.main_W = capcols
-    pls[#pls + 1] = { name = "cap-left1", stem = main_stem, x = 0, y = main_row - 2, w = capcols, h = 1 }
+    pls[#pls + 1] = { name = channel_name("left", 0), stem = main_stem, x = 0, y = main_row - 2, w = capcols, h = 1 }
   else
     state.main_W = main_stem + 2
-    pls[#pls + 1] = { name = "corner-tl", stem = main_stem, x = 0, y = main_row - 2, w = main_stem + 2, h = H }
+    pls[#pls + 1] = { name = corner_name(main_stem, "top"), stem = main_stem, x = 0, y = main_row - 2, w = main_stem + 2, h = H }
   end
   local rail_width = main_stem -- leftmost gutter; kept continuous through separators
 
   if vim.o.laststatus == 3 then
     local sl_row = vim.o.lines - vim.o.cmdheight - 1 -- 0-indexed statusline row
     if bl_stem == 0 then -- gutterless bottom-left window -> cap the statusline bar
-      pls[#pls + 1] = { name = "cap-left1", stem = bl_stem, x = 0, y = sl_row, w = capcols, h = 1 }
+      pls[#pls + 1] = { name = channel_name("left", 0), stem = bl_stem, x = 0, y = sl_row, w = capcols, h = 1 }
     elseif sl_row - 1 >= 0 then
-      pls[#pls + 1] = { name = "corner-bl", stem = bl_stem, x = 0, y = sl_row - 1, w = bl_stem + 2, h = H }
+      pls[#pls + 1] = { name = corner_name(bl_stem, "bottom"), stem = bl_stem, x = 0, y = sl_row - 1, w = bl_stem + 2, h = H }
     end
   end
 
@@ -179,10 +212,89 @@ local function compute_placements()
         local y = sep_row - 1
         local c0, c1 = a.col - 1, a.col + a.w - 2
         local lx = (c0 == 0) and rail_width or c0
-        pls[#pls + 1] = { name = "hcap-l", stem = main_stem, x = lx, y = y, w = 1 + capcols, h = 1 }
-        pls[#pls + 1] = { name = "hcap-r", stem = main_stem, x = c1 - capcols + 1, y = y, w = capcols, h = 1 }
+        pls[#pls + 1] = { name = channel_name("left", 1), stem = main_stem, x = lx, y = y, w = 1 + capcols, h = 1 }
+        pls[#pls + 1] = { name = channel_name("right", 0), stem = main_stem, x = c1 - capcols + 1, y = y, w = capcols, h = 1 }
         break
       end
+    end
+  end
+
+  -- Vertical splits (side-by-side windows). The tabline (top) and global statusline
+  -- (bottom) are each a SINGLE bar across the whole width; the window separator lives
+  -- only in the window rows, not the frame rows. So we break each frame into per-pane
+  -- pieces with image overlays: a pane that has another pane to its LEFT gets its own
+  -- top-left / bottom-left elbow curving into ITS gutter, and the pane to its left has
+  -- its bar terminated with a rounded right cap + 1-col black gap (`cap-r-gap`) so the
+  -- break reads instead of the old T-junction. The rightmost pane's bar rounds off at
+  -- the screen edge with a plain right cap (`hcap-r`).
+  local top_row = math.huge
+  for _, a in ipairs(infos) do if a.row < top_row then top_row = a.row end end
+
+  -- Right cap for a pane's own far-right end (rounds off at `last0`, its last column).
+  local function far_right_cap(a, y)
+    local last0 = a.col + a.w - 2
+    return { name = channel_name("right", 0), stem = main_stem, x = last0 - capcols + 1, y = y, w = capcols, h = 1 }
+  end
+  -- Cap + gap terminating the pane to the LEFT of `a`: a's elbow sits on the window
+  -- separator at a.col-2, so the cap tip lands on that pane's last column (a.col-4)
+  -- and the 1-col black gap over a.col-3, ending just left of the elbow.
+  local function left_cap_gap(a, y)
+    return { name = channel_name("right", 1), stem = main_stem, x = a.col - 3 - capcols, y = y, w = capcols + 1, h = 1 }
+  end
+  -- Top-left elbow (or a plain left cap for a gutterless pane) at pane `a`'s left edge.
+  -- A right pane sits against a 1-col window separator that is ALSO periwinkle, so the
+  -- separator + gutter read as one rail; widen the stem by that column and place the
+  -- elbow on the separator (a.col-2) so it curves into the whole rail instead of
+  -- landing one cell to the right of it.
+  local function pane_corner(a, orient, y)
+    if a.stem == 0 then
+      return { name = channel_name("left", 0), stem = main_stem, x = a.col - 2, y = y, w = capcols, h = 1 }
+    end
+    local stem = a.stem + 1
+    return { name = corner_name(stem, orient), stem = stem, x = a.col - 2, y = y, w = stem + 2, h = H }
+  end
+
+  local function frame_panes(is_row, y)
+    local wins = {}
+    for _, a in ipairs(infos) do if is_row(a) then wins[#wins + 1] = a end end
+    table.sort(wins, function(x, z) return x.col < z.col end)
+    local capped = false
+    for _, a in ipairs(wins) do
+      if a.col > 1 then
+        pls[#pls + 1] = pane_corner(a, (y == top_row - 2) and "top" or "bottom", y)
+        pls[#pls + 1] = left_cap_gap(a, y)
+      end
+    end
+    if #wins > 0 and wins[#wins].col > 1 then
+      pls[#pls + 1] = far_right_cap(wins[#wins], y)
+      capped = true
+    end
+    return capped
+  end
+
+  -- TOP frame: elbows are 2 rows tall (bar + stem) so their bar sits on top_row-2.
+  frame_panes(function(a) return a.row == top_row end, top_row - 2)
+
+  -- BOTTOM frame: only with a global statusline. Elbows curve up from each pane's
+  -- gutter into the statusline row; caps sit on the statusline row itself.
+  state.right_pad = 0
+  if vim.o.laststatus == 3 then
+    local sl_row = vim.o.lines - vim.o.cmdheight - 1
+    local bottom = -1
+    for _, a in ipairs(infos) do local b = a.row + a.h - 1; if b > bottom then bottom = b end end
+    -- pane elbows land at sl_row-1 (bar+stem reaches the statusline); caps at sl_row.
+    local wins = {}
+    for _, a in ipairs(infos) do if a.row + a.h - 1 == bottom then wins[#wins + 1] = a end end
+    table.sort(wins, function(x, z) return x.col < z.col end)
+    for _, a in ipairs(wins) do
+      if a.col > 1 and sl_row - 1 >= 0 then
+        pls[#pls + 1] = pane_corner(a, "bottom", (a.stem == 0) and sl_row or (sl_row - 1))
+        pls[#pls + 1] = left_cap_gap(a, sl_row)
+      end
+    end
+    if #wins > 0 and wins[#wins].col > 1 then
+      pls[#pls + 1] = far_right_cap(wins[#wins], sl_row)
+      state.right_pad = capcols -- statusline reserves this so its far-right cap clears the position text
     end
   end
   return pls
@@ -233,6 +345,12 @@ function M.width()
   return state.main_W
 end
 
+-- Columns the statusline must reserve on its RIGHT so a vertical-split's far-right
+-- rounded cap doesn't overlay the position text. 0 when there's no such cap.
+function M.right_pad()
+  return state.right_pad or 0
+end
+
 function M.refresh()
   if not M.enabled then return end
   local cw, ch = cell_px()
@@ -276,7 +394,17 @@ function M.toggle()
 end
 
 vim.api.nvim_create_user_command("LcarsCorner", function() M.toggle() end,
-  { desc = "Toggle the experimental LCARS corner elbows" })
+  { desc = "Toggle the LCARS corner elbows" })
+
+-- Enabled by default. Wait for VimEnter so the terminal is attached and image.nvim
+-- has finished setup; defer once more so the first layout has settled before we read
+-- cell size / window geometry. `:LcarsCorner` still toggles it off.
+vim.api.nvim_create_autocmd("VimEnter", {
+  once = true,
+  callback = function()
+    vim.schedule(function() M.enable() end)
+  end,
+})
 
 -- BufWinEnter/WinEnter catch a window switching to a gutterless buffer (e.g. netrw),
 -- which changes elbow-vs-cap without firing a resize/layout event.

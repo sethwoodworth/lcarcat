@@ -2,14 +2,14 @@
 """Experimental: nvim-style top-left CORNER elbow, merged into a mock chrome.
 
 Renders the `corner-tl` elbow (a 1-row bar whose left end rounds down into an
-N-column stem = the number-gutter width) via kitty Unicode placeholders, over a
-mocked periwinkle tabline row + gutter stem, so we can judge how the fixed corner
-merges with BOTH rows without covering the pills or the number bar.
+                               N-column stem = the number-gutter width) via
+kitty Unicode placeholders, over a mocked periwinkle tabline row + gutter stem,
+so we can judge how the fixed corner merges with BOTH rows without covering the
+pills or the number bar.
 
 Self-sizes: queries the cell pixel size (CSI 16 t) and regenerates the corner at
 exactly that size so kitty does no scaling (no 1px offset). The image is
 transmitted ONCE as a virtual placement (image id); the placeholder cells then
-reference it — no PNG resend.
 
 Run inside kitty:
     python3 demos/corner_preview.py
@@ -90,7 +90,8 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     assets = os.path.abspath(os.path.join(here, "..", "nvim", "assets"))
     gen = os.path.abspath(os.path.join(here, "..", "generate", "gen_swoops.py"))
-    img = os.path.join(assets, "corner-tl.png")
+    sys.path.insert(0, os.path.dirname(gen))
+    from gen_swoops import asset_name  # reuse the generator's naming so we read the right file
 
     cell = query_cell_px()
     if cell:
@@ -99,7 +100,11 @@ def main():
               f"(bar {BAR_ROWS}r, stem {N}c) at {(N + 2) * cw}x{(BAR_ROWS + STEM_ROWS) * ch}px")
         regen_corner(cw, ch, assets, gen)
     else:
+        cw, ch = 19, 38
         print("could not detect cell size (not a kitty tty?); using existing asset")
+    # regen_corner runs without --corner-bg, so the corner has no baked background.
+    img = os.path.join(assets, asset_name(
+        "corner", "9999ff", N + 2, BAR_ROWS + STEM_ROWS, cw, ch, orient="top", facing="left"))
     if not os.path.exists(img):
         sys.exit(f"missing asset: {img}")
 

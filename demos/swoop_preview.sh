@@ -17,7 +17,7 @@ placeC1() { local p; p=$(b64 "$1"); printf '\033_Ga=T,f=100,t=f,c=%s,r=%s,C=1;%s
 printf '\n'
 # ---------- TOP swoop: bar(rows0-1) + stem(rows2-3) ----------
 reserve $ROWS
-placeC1 "$DIR/swoop-top.png" "$COLS" "$ROWS"
+placeC1 "$DIR/swoop-top-left-9999ff-48x3cells-19x40pixels.png" "$COLS" "$ROWS"
 printf '\033[2B\033[3G'"${blue} ~/proj${rst}  ${lilac}git:main${rst}"     # stem row 1: prompt
 printf '\033[1B\033[3G'"${dim}→ [2026-07-07T17:15:42Z]${rst}  \$ ls"       # stem row 2: start ts + cmd
 printf '\033[1B\033[1G'                                                    # move below the image
@@ -26,7 +26,7 @@ printf "${green}build/${rst}  README.md  main.py\n"
 
 # ---------- BOTTOM swoop: stem(rows0-1) + bar(rows2-3) ----------
 reserve $ROWS
-placeC1 "$DIR/swoop-bottom.png" "$COLS" "$ROWS"
+placeC1 "$DIR/swoop-bottom-left-9999ff-48x3cells-19x40pixels.png" "$COLS" "$ROWS"
 printf '\033[3G'"${dim}↩ [2026-07-07T17:15:43Z] ⏱ 4ms${rst}"              # stem row 1: end ts
 printf '\033[3B\033[1G'                                                    # move below the image
 printf '\n'

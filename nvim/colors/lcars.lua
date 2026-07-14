@@ -254,14 +254,17 @@ hi("diffLine",      { fg = p.sky })
 -- Plugins already in this config
 -- ---------------------------------------------------------------------------
 -- gitsigns.nvim
-hi("GitSignsAdd",      { fg = p.sage })
-hi("GitSignsChange",   { fg = p.gold })
-hi("GitSignsDelete",   { fg = p.red })
--- signcolumn='number' -> the *Nr variants render in the orange stem; the +/~/_
--- symbols carry the meaning, black on orange stays legible.
-hi("GitSignsAddNr",    { fg = p.bg, bg = p.stem, bold = true })
-hi("GitSignsChangeNr", { fg = p.bg, bg = p.stem, bold = true })
-hi("GitSignsDeleteNr", { fg = p.bg, bg = p.stem, bold = true })
+-- A git sign in the gutter drops the periwinkle stem back to solid black for
+-- that cell, so the sage/gold/red +/~/_ glyphs read at full contrast instead of
+-- washing out against the periwinkle. The stem stays periwinkle everywhere else.
+hi("GitSignsAdd",      { fg = p.sage, bg = p.bg })
+hi("GitSignsChange",   { fg = p.gold, bg = p.bg })
+hi("GitSignsDelete",   { fg = p.red,  bg = p.bg })
+-- signcolumn='number' merges signs into the number column; the *Nr variants
+-- carry the same black-cell treatment so the colored glyph sits on black there too.
+hi("GitSignsAddNr",    { fg = p.sage, bg = p.bg, bold = true })
+hi("GitSignsChangeNr", { fg = p.gold, bg = p.bg, bold = true })
+hi("GitSignsDeleteNr", { fg = p.red,  bg = p.bg, bold = true })
 
 -- telescope.nvim
 hi("TelescopeBorder",        { fg = p.orange, bg = p.bg })

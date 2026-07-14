@@ -11,8 +11,13 @@ Shape (top swoop), matching the LCARS elbow:
   |                                    (prompt, timestamps) nests to
                                        the right of the stem.
 
-  swoop-top.png     bar on top, stem descends   (header)
-  swoop-bottom.png  vertical mirror: bar on bottom, stem ascends (footer)
+  orientation top     bar on top, stem descends   (header)
+  orientation bottom  vertical mirror: bar on bottom, stem ascends (footer)
+
+Every PNG is named for the inputs that shape it via asset_name() -- kind, orientation,
+facing edge, bar color, optional baked background, and size in cells + pixels -- so
+distinct variants coexist instead of overwriting one fixed name, e.g.
+  swoop-top-left-9999ff-48x3cells-19x40pixels.png
 
 Drawn supersampled from an explicit outline (arcs sampled to points) so the outer
 corner and the inner fillet are smooth. Placed by kitty scaled to r=(2+stem) rows
@@ -45,6 +50,43 @@ STEM_COLS = 1
 def hex_rgba(h: str):
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (255,)
+
+
+def round_cap_cols(rows, cellw, cellh):
+    """Cell columns a half-round cap spans: radius (= half its pixel height) divided
+    by the cell width. Shared by make_cap / make_hcap and the naming, so a filename's
+    declared width always matches the image actually drawn. (The SS supersample factor
+    cancels, so this equals the in-image `round(r / (cellw*SS))`.)"""
+    return max(1, round(rows * cellh / (2 * cellw)))
+
+
+def asset_name(kind, color, cols, rows, cellw, cellh,
+               orient="round", facing="left", gap=None, bg=None):
+    """Build a self-describing, collision-free PNG filename encoding every input that
+    changes the rendered image, so distinct variants coexist instead of overwriting one
+    fixed name. Words are spelled out (no abbreviations) and greppable:
+
+      {kind}-{orient}-{facing}-{color}[-background{hex}]-{cols}x{rows}cells-{cellw}x{cellh}pixels[-gap{n}].png
+
+    - kind    : swoop | elbow | cap | corner | hcap
+    - orient  : top | bottom (vertical flip); round for the horizontal/round caps
+    - facing  : left | right — which edge carries the stem (elbow/corner) or the round side (cap)
+    - color   : 6-hex bar color, no '#'
+    - background: 6-hex opaque fill baked behind the outer curve (corners/hcaps); omitted if none
+    - cols/rows : size in terminal cells; cellw/cellh: pixels per cell
+    - gap     : leading black gap columns (channel caps only); omitted if none
+
+    The exact same string is reproduced by the zsh prompt, nvim's chrome.lua, and the
+    deploy mappings, so keep this format and the Lua mirror in chrome.lua in lock-step.
+    """
+    parts = [kind, orient, facing, color]
+    if bg is not None:
+        parts.append("background" + bg.lstrip("#"))
+    parts.append(f"{cols}x{rows}cells")
+    parts.append(f"{cellw}x{cellh}pixels")
+    if gap is not None:
+        parts.append(f"gap{gap}")
+    return "-".join(parts) + ".png"
 
 
 def arc(cx, cy, r, deg0, deg1, n=48):
@@ -106,8 +148,7 @@ def make_cap(path, color, rows, cellw, cellh, mirror=False):
     """
     ch = cellh * SS
     H = rows * ch
-    r = H / 2.0
-    cols = max(1, round(r / (cellw * SS)))
+    cols = round_cap_cols(rows, cellw, cellh)
     W = cols * cellw * SS
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     # circle centered on the left edge, keep the right half (angles -90..90)
@@ -137,8 +178,7 @@ def make_hcap(path, color, cellw, cellh, side, gap_cols=0, bg=None, rows=1):
     """
     ch = cellh * SS
     H = rows * ch
-    r = H / 2.0
-    capcols = max(1, round(r / (cellw * SS)))
+    capcols = round_cap_cols(rows, cellw, cellh)
     wcap = capcols * cellw * SS
     wgap = gap_cols * cellw * SS
     W = wgap + wcap
@@ -186,33 +226,43 @@ def main():
 
     os.makedirs(a.outdir, exist_ok=True)
     color = hex_rgba(a.color)
+    chex = a.color.lstrip("#").lower()
+    bghex = a.corner_bg.lstrip("#").lower() if a.corner_bg else None
 
     # Legacy wide swoops (whole bar baked into the PNG) -- kept for the current prompt.
-    for name, flip in (("swoop-top.png", False), ("swoop-bottom.png", True)):
+    for orient, flip in (("top", False), ("bottom", True)):
+        name = asset_name("swoop", chex, a.cols, BAR_ROWS + a.stem_rows,
+                          a.cellw, a.cellh, orient=orient, facing="left")
         print("wrote:", make_swoop(os.path.join(a.outdir, name), color,
                                    a.cols, a.stem_rows, a.cellw, a.cellh, flip))
 
     # Cell-based approach: a small left elbow cap (rounded corner + inner fillet + a
     # 1-row stem stub) + a right round cap; the flat bar fill is drawn as terminal cells
     # by the prompt, and the stem continues below the image as a background cell.
-    for name, flip in (("elbow-top.png", False), ("elbow-bottom.png", True)):
+    for orient, flip in (("top", False), ("bottom", True)):
+        name = asset_name("elbow", chex, a.elbow_cols, BAR_ROWS + a.stem_rows,
+                          a.cellw, a.cellh, orient=orient, facing="left")
         print("wrote:", make_swoop(os.path.join(a.outdir, name), color,
                                    a.elbow_cols, a.stem_rows, a.cellw, a.cellh, flip))
 
     # Divider elbows: horizontal mirror of the above (outer rounded corner + stem on the
     # RIGHT edge). Used at a pane's divider-facing edge so the bar sweeps down into the
     # kitty border (set to the bar color), forming a double swoop across a vsplit.
-    for name, flip in (("elbow-top-mirror.png", False), ("elbow-bottom-mirror.png", True)):
+    for orient, flip in (("top", False), ("bottom", True)):
+        name = asset_name("elbow", chex, a.elbow_cols, BAR_ROWS + a.stem_rows,
+                          a.cellw, a.cellh, orient=orient, facing="right")
         print("wrote:", make_swoop(os.path.join(a.outdir, name), color,
                                    a.elbow_cols, a.stem_rows, a.cellw, a.cellh, flip,
                                    mirror=True))
-    path, cols = make_cap(os.path.join(a.outdir, "cap-right.png"),
-                          color, 2, a.cellw, a.cellh)
-    print(f"wrote: {path}  (cap width = {cols} cols)")
-    # Left-facing cap, for when the stem/elbow lives on the right end instead.
-    path, cols = make_cap(os.path.join(a.outdir, "cap-left.png"),
-                          color, 2, a.cellw, a.cellh, mirror=True)
-    print(f"wrote: {path}  (cap width = {cols} cols)")
+
+    # Round vertical bar caps (right-facing default, left-facing mirror).
+    cap_cols = round_cap_cols(2, a.cellw, a.cellh)
+    for facing, mirror in (("right", False), ("left", True)):
+        name = asset_name("cap", chex, cap_cols, 2, a.cellw, a.cellh,
+                          orient="round", facing=facing)
+        path, cols = make_cap(os.path.join(a.outdir, name), color, 2,
+                              a.cellw, a.cellh, mirror=mirror)
+        print(f"wrote: {path}  (cap width = {cols} cols)")
 
     # Corner elbow for the nvim chrome: a short bar (default 1 row) whose left end
     # rounds down into a wide stem (= number-gutter width). Width = stem + 2 cols so
@@ -221,29 +271,28 @@ def main():
     # pills and gutter show through. corner-tl = top-left, corner-bl = bottom-left.
     corner_cols = a.stem_cols + 2
     corner_bg = hex_rgba(a.corner_bg) if a.corner_bg else None
-    for name, flip in (("corner-tl.png", False), ("corner-bl.png", True)):
+    for orient, flip in (("top", False), ("bottom", True)):
+        name = asset_name("corner", chex, corner_cols, a.bar_rows + a.stem_rows,
+                          a.cellw, a.cellh, orient=orient, facing="left", bg=bghex)
         print("wrote:", make_swoop(os.path.join(a.outdir, name), color,
                                    corner_cols, a.stem_rows, a.cellw, a.cellh, flip,
                                    bar_rows=a.bar_rows, stem_cols=a.stem_cols,
                                    corner_bg=corner_bg))
 
-    # 1-row channel end-caps for split separators: a left cap (with a 1-col black gap
-    # so the segment sits off the left rail) and a right cap. The flat run between them
-    # is drawn as periwinkle cells (the WinSeparator), so only the rounded ends are PNGs.
-    path, total, _ = make_hcap(os.path.join(a.outdir, "hcap-l.png"), color,
-                               a.cellw, a.cellh, "l", gap_cols=1, bg=corner_bg)
-    print(f"wrote: {path}  ({total} cols)")
-    path, total, capcols = make_hcap(os.path.join(a.outdir, "hcap-r.png"), color,
-                                     a.cellw, a.cellh, "r", bg=corner_bg)
-    print(f"wrote: {path}  ({total} cols, cap {capcols})")
-
-    # Gapless 1-row round-left cap for the editor edge: used in place of the corner
-    # elbow when the top-left / bottom-left window has NO gutter (e.g. netrw), so the
-    # tabline / statusline bar simply rounds off at the left instead of curving into a
-    # (non-existent) stem.
-    path, total, _ = make_hcap(os.path.join(a.outdir, "cap-left1.png"), color,
-                               a.cellw, a.cellh, "l", gap_cols=0, bg=corner_bg)
-    print(f"wrote: {path}  ({total} cols)")
+    # 1-row channel end-caps for split separators (the flat run between them is drawn as
+    # periwinkle cells). Four variants distinguished by facing + leading gap:
+    #   left/gap1  : off the left rail (was hcap-l)
+    #   right/gap0 : rounds the far-right end (was hcap-r)
+    #   left/gap0  : gutterless editor-edge cap, no gap (was cap-left1)
+    #   right/gap1 : left-pane terminator before a vsplit neighbour's elbow (was cap-r-gap)
+    hcap_cols = round_cap_cols(1, a.cellw, a.cellh)
+    for side, facing, gap in (("l", "left", 1), ("r", "right", 0),
+                              ("l", "left", 0), ("r", "right", 1)):
+        name = asset_name("hcap", chex, hcap_cols, 1, a.cellw, a.cellh,
+                          orient="round", facing=facing, gap=gap, bg=bghex)
+        path, total, capcols = make_hcap(os.path.join(a.outdir, name), color,
+                                         a.cellw, a.cellh, side, gap_cols=gap, bg=corner_bg)
+        print(f"wrote: {path}  ({total} cols, cap {capcols})")
 
 
 if __name__ == "__main__":

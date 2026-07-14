@@ -8,9 +8,18 @@ local p = require("lcars.palette")
 
 -- LCARS buffer-navigation row (native tabline; sets vim.o.tabline itself).
 require("lcars.tabline")
--- Experimental corner elbow: when active, the bottom-left elbow occupies a slightly
+-- Corner elbow (on by default): when active, the bottom-left elbow occupies a slightly
 -- wider column span than the raw gutter, so the mode pill must clear that instead.
 local chrome_ok, chrome = pcall(require, "lcars.chrome")
+
+-- Trailing spacer so a vertical-split's far-right rounded cap (an image at the
+-- screen edge) sits over blank bar instead of clipping the position text.
+local right_reserve = function()
+  if chrome_ok and chrome.active() then
+    return string.rep(" ", chrome.right_pad())
+  end
+  return ""
+end
 
 -- LINE cur/total, COL nnn — LCARS long-form, leading-zero column.
 local location = function()
@@ -49,7 +58,17 @@ lualine.setup({
     },
     lualine_b = {
       { "branch", icon = "" },
-      { "diff", symbols = { added = "+", modified = "~", removed = "-" } },
+      {
+        "diff",
+        symbols = { added = "+", modified = "~", removed = "-" },
+        -- Section b is a black notch; color the diff counts to match the gutter
+        -- signs (sage/gold/red) so they read at full contrast.
+        diff_color = {
+          added    = { fg = p.sage, bg = p.bg },
+          modified = { fg = p.gold, bg = p.bg },
+          removed  = { fg = p.red,  bg = p.bg },
+        },
+      },
     },
     lualine_c = {
       { "filename", path = 1 },
@@ -64,7 +83,7 @@ lualine.setup({
       { "filetype", fmt = string.upper },
     },
     lualine_y = {},
-    lualine_z = { location },
+    lualine_z = { location, { right_reserve, padding = 0 } },
   },
   inactive_sections = {
     lualine_a = {},

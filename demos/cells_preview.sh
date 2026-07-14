@@ -43,7 +43,7 @@ rowB() {
 # ---- STYLE A ----
 printf '\nStyle A — colored words on black notch (2 rows), with segmentation:\n'
 reserve 4
-placeC1 "$DIR/elbow-top.png" "$ELBOW" 4
+placeC1 "$DIR/elbow-top-left-9999ff-5x3cells-19x40pixels.png" "$ELBOW" 4
 printf '\033[%dG' $((ELBOW+1)); rowA text; pill_at
 printf '\033[1B\033[%dG' $((ELBOW+1)); rowA blank
 printf '\033[1B\033[3G'; fg "$B"; printf '~/proj'; rst; printf '  '; fg "$L"; printf 'git:main'; rst
@@ -54,7 +54,7 @@ printf '   '; fg "$G"; printf 'build/'; rst; printf '  README.md  main.py\n'
 # ---- STYLE B ----
 printf '\nStyle B — dark text on a colored label segment (2 rows):\n'
 reserve 4
-placeC1 "$DIR/elbow-top.png" "$ELBOW" 4
+placeC1 "$DIR/elbow-top-left-9999ff-5x3cells-19x40pixels.png" "$ELBOW" 4
 printf '\033[%dG' $((ELBOW+1)); rowB blank; pill_at
 printf '\033[1B\033[%dG' $((ELBOW+1)); rowB text
 printf '\033[1B\033[3G'; fg "$W"; printf '17:15'; rst; printf ' '; fg "$O"; printf '%%'; rst; printf ' '
@@ -63,7 +63,7 @@ printf '\033[1B\033[1G'
 
 # ---- FOOTER ----
 reserve 4
-placeC1 "$DIR/elbow-bottom.png" "$ELBOW" 4
+placeC1 "$DIR/elbow-bottom-left-9999ff-5x3cells-19x40pixels.png" "$ELBOW" 4
 printf '\033[3G'; fg "$DIM"; printf 'end 17:16  4ms'; rst
 printf '\033[2B\033[%dG' $((ELBOW+1)); bg "$O"; sp "$mid"; rst; pill_at
 printf '\033[1B\033[%dG' $((ELBOW+1)); bg "$O"; sp "$mid"; rst

@@ -10,7 +10,7 @@
 -- U+E0B4) drawn in the pill color on the black strip so the ends read as caps.
 
 local p = require("lcars.palette")
--- Experimental corner elbow (opt-in via :LcarsCorner). Loading it registers the
+-- Corner elbow (on by default; toggle via :LcarsCorner). Loading it registers the
 -- command; render() below asks it for the left prefix only when it's active.
 local chrome_ok, chrome = pcall(require, "lcars.chrome")
 

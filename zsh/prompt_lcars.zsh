@@ -16,6 +16,16 @@ _LCARS_ELBOW=5          # cols reserved for the left elbow image
 _LCARS_CAP=2            # cols reserved for the right cap image
 _LCARS_FRAME=3          # elbow image rows: bar(2) + stem(1) w/ inner fillet; regen if changed
 
+# Swoop end-cap images. gen_swoops.py names each PNG for its inputs (kind, orientation,
+# facing edge, bar color, and cell/pixel size) so variants coexist instead of overwriting
+# one name. These must match the deployed periwinkle set at 19x40px cells; if you change
+# _LC_O (the bar color) or the cell metrics, regenerate and update the filenames here:
+#   gen_swoops.py --color <hex>            (default cells 19x40)
+_LCARS_ELBOW_LEFT="$_LCARS_DIR/elbow-top-left-9999ff-5x3cells-19x40pixels.png"
+_LCARS_ELBOW_RIGHT="$_LCARS_DIR/elbow-top-right-9999ff-5x3cells-19x40pixels.png"
+_LCARS_CAP_LEFT="$_LCARS_DIR/cap-round-left-9999ff-2x2cells-19x40pixels.png"
+_LCARS_CAP_RIGHT="$_LCARS_DIR/cap-round-right-9999ff-2x2cells-19x40pixels.png"
+
 # Which edge carries the input-stem elbow: left (default) or right. The opposite
 # edge gets the terminator (round cap, or a divider elbow when a pane abuts it).
 # Configurable so we can later default e.g. new full-width tabs to one side and
@@ -23,7 +33,7 @@ _LCARS_FRAME=3          # elbow image rows: bar(2) + stem(1) w/ inner fillet; re
 : ${_LCARS_STEM_SIDE:=left}
 
 # LCARS palette as SGR truecolor bodies
-_LC_O='255;153;0'       # bar accent (orange)
+_LC_O='153;153;255'     # bar base (periwinkle — muted so the chips pop; was orange 255;153;0)
 _LC_LIL='204;153;204'   # venv chip
 _LC_PERI='102;153;204'  # python chip (deep sky — separates from venv violet)
 _LC_GOLD='255;204;102'  # git chip
@@ -153,8 +163,8 @@ _lcars_swoop_precmd() {
 
   if ! _lcars_graphics_ok; then
     local gi; gi=$(_lcars_git_seg)
-    PROMPT="%F{#5599ff}%~%f ${gi:+%F{#ffcc66}$gi%f }"$'\n'"%K{#ff9900} %k "
-    PROMPT2="%K{#ff9900} %k "
+    PROMPT="%F{#5599ff}%~%f ${gi:+%F{#ffcc66}$gi%f }"$'\n'"%K{#9999ff} %k "
+    PROMPT2="%K{#9999ff} %k "
     return
   fi
 
@@ -179,14 +189,14 @@ _lcars_swoop_precmd() {
   local left_img right_img left_rows right_rows
   local -i left_w right_w left_lead right_lead
   if (( left_elbow )); then
-    left_img="$_LCARS_DIR/elbow-top.png";  left_w=$_LCARS_ELBOW; left_rows=$_LCARS_FRAME; left_lead=0
+    left_img="$_LCARS_ELBOW_LEFT"; left_w=$_LCARS_ELBOW; left_rows=$_LCARS_FRAME; left_lead=0
   else
-    left_img="$_LCARS_DIR/cap-left.png";   left_w=$_LCARS_CAP;   left_rows=2;             left_lead=2
+    left_img="$_LCARS_CAP_LEFT";   left_w=$_LCARS_CAP;   left_rows=2;             left_lead=2
   fi
   if (( right_elbow )); then
-    right_img="$_LCARS_DIR/elbow-top-mirror.png"; right_w=$_LCARS_ELBOW; right_rows=$_LCARS_FRAME; right_lead=0
+    right_img="$_LCARS_ELBOW_RIGHT"; right_w=$_LCARS_ELBOW; right_rows=$_LCARS_FRAME; right_lead=0
   else
-    right_img="$_LCARS_DIR/cap-right.png";        right_w=$_LCARS_CAP;   right_rows=2;             right_lead=2
+    right_img="$_LCARS_CAP_RIGHT";   right_w=$_LCARS_CAP;   right_rows=2;             right_lead=2
   fi
 
   # 1) Close the previous command with an end-timestamp line (no bottom bar).
@@ -257,7 +267,7 @@ _lcars_swoop_precmd() {
   # the left end is a cap (elbow on the right), there's no left stem, so PROMPT2 is plain.
   # Either way the editable area stays left, aligned at col 3.
   PROMPT="  "
-  if (( left_elbow )); then PROMPT2="%K{#ff9900} %k "; else PROMPT2="  "; fi
+  if (( left_elbow )); then PROMPT2="%K{#9999ff} %k "; else PROMPT2="  "; fi
 }
 
 # ---- toggle ----------------------------------------------------------------

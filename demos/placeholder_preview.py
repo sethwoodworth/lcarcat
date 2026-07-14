@@ -91,7 +91,8 @@ if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     assets = os.path.abspath(os.path.join(here, "..", "nvim", "assets"))
     gen = os.path.abspath(os.path.join(here, "..", "generate", "gen_swoops.py"))
-    img = os.path.join(assets, "elbow-top.png")
+    sys.path.insert(0, os.path.dirname(gen))
+    from gen_swoops import asset_name  # reuse the generator's naming so we read the right file
 
     cell = query_cell_px()
     if cell:
@@ -99,7 +100,11 @@ if __name__ == "__main__":
         print(f"kitty cell = {cw}x{ch}px -> regenerating elbow at {COLS * cw}x{ROWS * ch}px")
         regen_elbow(cw, ch, assets, gen)
     else:
+        cw, ch = 19, 40
         print("could not detect cell size (not a kitty tty?); using existing 19x40 asset")
+    # Top-left elbow (no mirror), periwinkle, no baked background.
+    img = os.path.join(assets, asset_name(
+        "elbow", "9999ff", COLS, ROWS, cw, ch, orient="top", facing="left"))
     if not os.path.exists(img):
         sys.exit(f"missing asset: {img}")
     place(img, img_id=1234, cols=COLS, rows=ROWS)
