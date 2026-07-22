@@ -103,6 +103,12 @@ This is the design law that dictates *where* chrome goes (see also the style sec
   `vim.defer_fn`) so you regenerate/redraw once.
 - `redrawtabline` alone won't refresh the statusline pad; also `redrawstatus`.
 
+## Agent session behavior
+
+- **Track conversational decisions in beads as they happen.** When the user clarifies requirements, makes a design choice, or rules something out in conversation, add that to the relevant bead's `--notes` or `--design` field immediately — don't wait until session close. A future agent picking up the bead must be able to reconstruct the why from the bead alone.
+- **Claim beads before starting work.** Run `bd update <id> --claim` when beginning a task so status reflects reality.
+- **Close beads only after the user validates the change**, not just after deploying.
+
 ## Glyphs & LCARS style
 - LCARS is **solid geometric shapes and color**, not icon-font glyphs. Avoid `✘ ✓ ⚠ ⏱ → ↩`.
   Prefer dropping the glyph and letting **color** carry meaning (see the LCARS glyph kit in
