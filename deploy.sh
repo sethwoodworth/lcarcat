@@ -21,6 +21,7 @@ mappings=(
   "zsh/prompt_lcars.zsh          $CONFIG/zsh/prompt_lcars.zsh"
   "generate/gen_swoops.py        $CONFIG/kitty/lcars/gen_swoops.py"
   "kitty/lcars.conf              $CONFIG/kitty/lcars.conf"
+  "kitty/lcarcat.keybindings.conf $CONFIG/kitty/lcarcat.keybindings.conf"
   # Swoop end-caps: gen_swoops.py names each PNG for its inputs (kind/orientation/facing/
   # color/cell+pixel size) so variants coexist. This is the periwinkle 19x40px set the
   # prompt references; regenerate + update both lists together if the color/metrics change.
@@ -36,7 +37,8 @@ mappings=(
   "nvim/lua/lcars/palette.lua    $CONFIG/nvim/lua/lcars/palette.lua"
   "nvim/lua/lcars/statusline.lua $CONFIG/nvim/lua/lcars/statusline.lua"
   "nvim/lua/lcars/tabline.lua    $CONFIG/nvim/lua/lcars/tabline.lua"
-  "nvim/lua/lcars/chrome.lua     $CONFIG/nvim/lua/lcars/chrome.lua"
+  "nvim/lua/lcars/chrome.lua          $CONFIG/nvim/lua/lcars/chrome.lua"
+  "nvim/lua/lcars/command_buffer.lua $CONFIG/nvim/lua/lcars/command_buffer.lua"
   "nvim/lua/lualine/themes/lcars.lua $CONFIG/nvim/lua/lualine/themes/lcars.lua"
 )
 
@@ -66,7 +68,7 @@ done
 
 cat <<EOF
 
-Done. Not handled automatically (one-time manual step):
-  - kitty/keybindings.snippet.conf  -> append into $CONFIG/kitty/keybindings.conf
+Done. Not handled automatically (one-time manual steps):
+  - kitty.conf: ensure it includes lcarcat.keybindings.conf (already done if you ran setup)
   - reload the prompt:  source $CONFIG/zsh/prompt_lcars.zsh
 EOF
