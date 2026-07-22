@@ -78,6 +78,11 @@ local function regenerate(stem, cb)
     cb(false)
     return
   end
+  if vim.fn.executable("uv") == 0 then
+    vim.notify("lcars.chrome: 'uv' not found in PATH — skipping asset generation", vim.log.levels.WARN)
+    cb(false)
+    return
+  end
   vim.fn.jobstart({
     "uv", "run", "--with", "pillow", gen_py, "--color", "9999ff",
     "--outdir", dir, "--stem-rows", tostring(STEM_ROWS),
