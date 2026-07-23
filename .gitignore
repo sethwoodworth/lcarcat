@@ -7,3 +7,6 @@
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Machine-local Claude Code permissions (not shared across machines)
+.claude/settings.local.json
