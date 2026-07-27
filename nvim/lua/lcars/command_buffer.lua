@@ -5,6 +5,35 @@
 
 if vim.env.LCARCAT_COMMAND_BUFFER ~= "1" then return {} end
 
+-- LCARS input-panel theming: orange stem marks this as an active input panel,
+-- distinct from the periwinkle display-panel stem in the shell pane above.
+-- All overrides are window-local via winhighlight — no bleed into normal nvim.
+local p = require("lcars.palette")
+
+local function _apply_cmd_highlights()
+  vim.api.nvim_set_hl(0, "LcarsCmdStem",       { fg = p.bg,     bg = p.orange })
+  vim.api.nvim_set_hl(0, "LcarsCmdStemDim",    { fg = p.bg_dim, bg = p.orange })
+  vim.api.nvim_set_hl(0, "LcarsCmdCursorNr",   { fg = p.bg, bg = p.orange, bold = true })
+  vim.api.nvim_set_hl(0, "LcarsCmdCursorLine", { bg = "#120800" })
+end
+_apply_cmd_highlights()
+vim.api.nvim_create_autocmd("ColorScheme", { buffer = 0, callback = _apply_cmd_highlights })
+
+vim.wo.winhighlight = table.concat({
+  "LineNr:LcarsCmdStem",
+  "LineNrAbove:LcarsCmdStemDim",
+  "LineNrBelow:LcarsCmdStemDim",
+  "CursorLineNr:LcarsCmdCursorNr",
+  "SignColumn:LcarsCmdStem",
+  "CursorLineSign:LcarsCmdStem",
+  "CursorLine:LcarsCmdCursorLine",
+}, ",")
+
+-- Pin signcolumn so the orange stem is always visible (never collapses).
+if vim.wo.signcolumn == "auto" or vim.wo.signcolumn:match("^auto:") then
+  vim.wo.signcolumn = "yes:1"
+end
+
 local M = {}
 
 local MINIMUM_LINES = 4
