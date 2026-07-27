@@ -189,12 +189,21 @@ local function compute_placements()
   end
   main_stem = main_stem or 4
 
+  -- An elbow at the top of the stem is only valid when a horizontal tabline bar is
+  -- present to connect to. Without it the elbow is a fillet mid-stem with no bar.
+  local tabline_visible = vim.o.showtabline == 2
+    or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)
+
   if main_stem == 0 then -- gutterless top-left window -> cap the tabline bar
     state.main_W = capcols
-    pls[#pls + 1] = { name = channel_name("left", 0), stem = main_stem, x = 0, y = main_row - 2, w = capcols, h = 1 }
+    if tabline_visible then
+      pls[#pls + 1] = { name = channel_name("left", 0), stem = main_stem, x = 0, y = main_row - 2, w = capcols, h = 1 }
+    end
   else
     state.main_W = main_stem + 2
-    pls[#pls + 1] = { name = corner_name(main_stem, "top"), stem = main_stem, x = 0, y = main_row - 2, w = main_stem + 2, h = H }
+    if tabline_visible then
+      pls[#pls + 1] = { name = corner_name(main_stem, "top"), stem = main_stem, x = 0, y = main_row - 2, w = main_stem + 2, h = H }
+    end
   end
   local rail_width = main_stem -- leftmost gutter; kept continuous through separators
 
@@ -278,7 +287,11 @@ local function compute_placements()
   end
 
   -- TOP frame: elbows are 2 rows tall (bar + stem) so their bar sits on top_row-2.
-  frame_panes(function(a) return a.row == top_row end, top_row - 2)
+  -- Skip when there is no tabline bar; an elbow with nothing extending horizontally
+  -- from it is a broken fillet.
+  if tabline_visible then
+    frame_panes(function(a) return a.row == top_row end, top_row - 2)
+  end
 
   -- BOTTOM frame: only with a global statusline. Elbows curve up from each pane's
   -- gutter into the statusline row; caps sit on the statusline row itself.
