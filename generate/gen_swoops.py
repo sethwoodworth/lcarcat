@@ -17,7 +17,7 @@ Shape (top swoop), matching the LCARS elbow:
 Every PNG is named for the inputs that shape it via asset_name() -- kind, orientation,
 facing edge, bar color, optional baked background, and size in cells + pixels -- so
 distinct variants coexist instead of overwriting one fixed name, e.g.
-  swoop-top-left-9999ff-48x3cells-19x40pixels.png
+  swoop-top-left-9999ff-48x3cells-19x38pixels.png
 
 Drawn supersampled from an explicit outline (arcs sampled to points) so the outer
 corner and the inner fillet are smooth. Placed by kitty scaled to r=(2+stem) rows
@@ -30,11 +30,18 @@ Options:
   --color HEX     bar color               (default ff9900)
   --cols N        total cell columns wide (default 48)
   --stem-rows N   rows the stem descends  (default 2)
-  --cellw PX      approx cell width  px   (default 19)
-  --cellh PX      approx cell height px   (default 40)
+  --cellw PX      cell width  px   (default 19) — MUST match kitty's cell.width from CSI 16t
+  --cellh PX      cell height px   (default 38) — MUST match kitty's cell.height from CSI 16t
   --outdir DIR    output dir (default: alongside this script)
 
 The horizontal bar is fixed at 2 rows tall and the stem at 1 column wide, per design.
+
+IMPORTANT: cellw/cellh MUST match kitty's actual cell dimensions. When kitty renders a
+Unicode-placeholder (U=1) image whose PNG dimensions don't exactly match cols*cellw x
+rows*cellh, it aspect-fits the image into the cell box and centers on the constraining
+axis. That centering produces a sub-cell inset (a 1-2 device-pixel gap between the image
+and any plain bg cell at the same column). Match the dimensions exactly and the inset is
+zero. See kitty/graphics.c:grman_put_cell_image for the arithmetic.
 """
 import argparse
 import math
@@ -209,7 +216,7 @@ def main():
                    help="rows the stem (with inner fillet) descends below the 2-row bar. "
                         "MUST match the prompt's _LCARS_FRAME = bar(2) + stem-rows. Default 1.")
     p.add_argument("--cellw", type=int, default=19)
-    p.add_argument("--cellh", type=int, default=40)
+    p.add_argument("--cellh", type=int, default=38)
     p.add_argument("--bar-rows", type=int, default=BAR_ROWS,
                    help="rows the horizontal bar is tall for the CORNER elbow "
                         "(nvim tabline is 1). Legacy swoops/elbows stay 2.")

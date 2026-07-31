@@ -18,15 +18,28 @@ _LCARS_FRAME=3          # elbow image rows: bar(2) + stem(1) w/ inner fillet; re
 
 # Swoop end-cap images. gen_swoops.py names each PNG for its inputs (kind, orientation,
 # facing edge, bar color, and cell/pixel size) so variants coexist instead of overwriting
-# one name. These must match the deployed periwinkle set at 19x40px cells; if you change
-# _LC_O (the bar color) or the cell metrics, regenerate and update the filenames here:
-#   gen_swoops.py --color <hex>            (default cells 19x40)
+# one name. The filename embeds cellw x cellh pixels; kitty aspect-fits the PNG into the
+# cell box (cols*cellw × rows*cellh) and, on any mismatch, centers on the constraining
+# axis — producing a 1-2 device-pixel left inset that misaligns the elbow stem from any
+# plain bg cell at the same column. To keep the inset at zero we build these paths from
+# kitty's *actual* cell dimensions at prompt enable (and after WINCH, e.g. font zoom /
+# display change), regenerating on-demand via gen_swoops.py if a matching-size set isn't
+# already on disk. See _lcars_ensure_assets below.
 # elbow-left + cap-right are always used; the -right elbow / -left cap are used only by the
 # (currently disabled) split-swoop feature — see _LCARS_SPLIT_SWOOP below.
-_LCARS_ELBOW_LEFT="$_LCARS_DIR/elbow-top-left-9999ff-5x3cells-19x40pixels.png"
-_LCARS_ELBOW_RIGHT="$_LCARS_DIR/elbow-top-right-9999ff-5x3cells-19x40pixels.png"
-_LCARS_CAP_LEFT="$_LCARS_DIR/cap-round-left-9999ff-2x2cells-19x40pixels.png"
-_LCARS_CAP_RIGHT="$_LCARS_DIR/cap-round-right-9999ff-2x2cells-19x40pixels.png"
+_LCARS_CW=19            # cell width  in device px; overwritten by _lcars_probe_cell_size
+_LCARS_CH=38            # cell height in device px; overwritten by _lcars_probe_cell_size
+_LCARS_COLOR=9999ff     # bar hex (matches _LC_O)
+_LCARS_GEN_PY=${_LCARS_DIR}/gen_swoops.py
+# Filenames are (re)built by _lcars_set_asset_paths; the defaults below just seed something
+# valid so the variables exist before the first probe.
+_lcars_set_asset_paths() {
+  _LCARS_ELBOW_LEFT="$_LCARS_DIR/elbow-top-left-${_LCARS_COLOR}-${_LCARS_ELBOW}x${_LCARS_FRAME}cells-${_LCARS_CW}x${_LCARS_CH}pixels.png"
+  _LCARS_ELBOW_RIGHT="$_LCARS_DIR/elbow-top-right-${_LCARS_COLOR}-${_LCARS_ELBOW}x${_LCARS_FRAME}cells-${_LCARS_CW}x${_LCARS_CH}pixels.png"
+  _LCARS_CAP_LEFT="$_LCARS_DIR/cap-round-left-${_LCARS_COLOR}-${_LCARS_CAP}x2cells-${_LCARS_CW}x${_LCARS_CH}pixels.png"
+  _LCARS_CAP_RIGHT="$_LCARS_DIR/cap-round-right-${_LCARS_COLOR}-${_LCARS_CAP}x2cells-${_LCARS_CW}x${_LCARS_CH}pixels.png"
+}
+_lcars_set_asset_paths
 
 # ---- split-swoop feature toggle (DISABLED) ---------------------------------
 # When enabled, the prompt queries its kitty pane's neighbors (via `kitty @ ls`, cached +
@@ -99,13 +112,21 @@ _lc_ph() {  # $1 image-id  $2 grid-row (0-based)  $3 ncols  [$4 flat-col]
   print -n -- "\e[0m"
 }
 _lc_transmit() {  # $1 path  $2 id  $3 cols  $4 rows — transmit + create a virtual placement
+  # t=d sends PNG bytes inline (base64-encoded file contents, not a path). This is
+  # synchronous: kitty has all data in one read and processes it before the next write
+  # arrives, so placeholder cells drawn immediately after are guaranteed to find the
+  # image registered. t=f (file path) is async — kitty reads the file on its own
+  # schedule and can miss the first placeholder draw.
   local b; b=$(print -rn -- "$1" | base64 | tr -d '\n')
   printf '\e_Ga=T,U=1,i=%d,f=100,t=f,c=%d,r=%d,q=2;%s\e\\' "$2" "$3" "$4" "$b"
 }
-# Fixed image ids: 1 elbow-left, 2 elbow-right, 3 cap-left, 4 cap-right. Sent once per
-# shell; the c×r grid is in cells, so kitty rescales the placement on font/zoom changes
-# and no retransmit is needed on resize. Re-armed by _lcars_prompt_enable. ids 2/3 are only
-# needed by the split-swoop feature, so they're transmitted only when it's enabled.
+# Fixed image ids: 1 elbow-left, 2 elbow-right, 3 cap-left, 4 cap-right. The c×r grid is
+# in cells, but the PNG dimensions have to match the actual cell.width × cell.height that
+# kitty reports (otherwise kitty aspect-fits and inserts a centering inset — see the
+# _LCARS_CW/_LCARS_CH probe path). On a WINCH that changes cell size (font zoom, display
+# change) _lcars_prompt_precheck clears _LCARS_IMAGES_SENT so we retransmit the correctly-
+# sized PNGs. ids 2/3 are only needed by the split-swoop feature, so they're transmitted
+# only when it's enabled.
 _lcars_transmit_images() {
   [[ -n $_LCARS_IMAGES_SENT ]] && return
   _lc_transmit "$_LCARS_ELBOW_LEFT" 1 "$_LCARS_ELBOW" "$_LCARS_FRAME"
@@ -115,6 +136,79 @@ _lcars_transmit_images() {
     _lc_transmit "$_LCARS_CAP_LEFT"    3 "$_LCARS_CAP"   2
   fi
   _LCARS_IMAGES_SENT=1
+}
+
+# ---- cell-size probe + on-demand asset regen ------------------------------
+# kitty reports the pixel size of one cell in response to CSI 16t; the reply is
+#   ESC [ 6 ; <height> ; <width> t
+# (VT terminals with WINDOW_MANIPULATION 16). On HiDPI kitty answers in device
+# pixels — the same unit its graphics renderer uses internally — so no scaling is
+# needed. We stash the numbers in _LCARS_CW/_LCARS_CH, then rebuild the filename
+# constants so they match. On mismatch, generate the missing set via gen_swoops.py
+# so the shell doesn't paint a broken elbow while assets are being made.
+#
+# Failure modes handled: no reply within timeout (keep previous dims); reply parses
+# but the dims are unchanged (no-op); dims changed but gen_swoops.py can't run
+# (log to stderr, keep old paths so we render *something*).
+_lcars_probe_cell_size() {
+  _lcars_graphics_ok || return
+  # Emit the CSI 16t query and read the reply back. `read -rsd 't'` reads raw bytes
+  # (no backslash processing) with terminal echo suppressed (-s → tcsetattr ~ECHO,
+  # so kitty's escape reply is NOT painted on-screen) up to and stripping the
+  # terminating 't'. -t 0.5 keeps this from hanging on non-kitty terminals or when
+  # a stray CSI response has already been swallowed.
+  local reply
+  print -n -- $'\e[16t'
+  # zsh read flags: -s silent (suppresses echo of the tty response), -d 't' reads
+  # up to and strips the terminating 't', -t 0.5 fails fast on non-kitty terminals.
+  IFS= read -s -d 't' -t 0.5 reply 2>/dev/null || return
+  # Expected reply body (with the 't' stripped by -d 't'): "ESC[6;<h>;<w>".
+  # Reject anything that doesn't match — a mixed-in keystroke can otherwise poison
+  # the parse and we'd rather keep the old dims than jump to garbage.
+  local new_h new_w
+  if [[ $reply =~ $'\e\\[6;([0-9]+);([0-9]+)$' ]]; then
+    new_h=$match[1]; new_w=$match[2]
+  else
+    return
+  fi
+  (( new_w > 0 && new_h > 0 )) || return
+  if [[ $new_w != $_LCARS_CW || $new_h != $_LCARS_CH ]]; then
+    _LCARS_CW=$new_w
+    _LCARS_CH=$new_h
+    _lcars_set_asset_paths
+    _LCARS_IMAGES_SENT=          # force retransmit at the new pixel dims
+  fi
+}
+
+# Regenerate the elbow/cap PNG set for the current $_LCARS_CW × $_LCARS_CH if any file is
+# missing. Called after every probe (cheap: filereadable checks + one uv invocation only
+# on miss). The generator writes a full set (all elbow/cap/swoop/hcap/corner variants);
+# we only care that the four the prompt uses exist.
+_lcars_ensure_assets() {
+  local -a needed
+  needed=(
+    "$_LCARS_ELBOW_LEFT" "$_LCARS_ELBOW_RIGHT"
+    "$_LCARS_CAP_LEFT"   "$_LCARS_CAP_RIGHT"
+  )
+  local f missing=
+  for f in "${needed[@]}"; do
+    [[ -r $f ]] || { missing=1; break; }
+  done
+  [[ -z $missing ]] && return 0
+  # Generator sits alongside the assets. Requires `uv` on PATH (see kitty-gui-path memory).
+  if [[ ! -x $(command -v uv 2>/dev/null) ]] || [[ ! -r $_LCARS_GEN_PY ]]; then
+    print -u2 -- "lcars: cannot regenerate elbows for ${_LCARS_CW}x${_LCARS_CH} cells (need uv + $_LCARS_GEN_PY)"
+    return 1
+  fi
+  uv run --with pillow "$_LCARS_GEN_PY" \
+    --color "$_LCARS_COLOR" --outdir "$_LCARS_DIR" \
+    --cellw "$_LCARS_CW" --cellh "$_LCARS_CH" >/dev/null 2>&1
+  # Verify the four we need now exist; if the generator's naming ever drifts, we want
+  # to know here rather than emit an escape sequence pointing at a missing file.
+  for f in "${needed[@]}"; do
+    [[ -r $f ]] || { print -u2 -- "lcars: regen ran but asset missing: $f"; return 1; }
+  done
+  return 0
 }
 
 _lcars_graphics_ok() { [[ -n $KITTY_WINDOW_ID && -z $TMUX && -z $SSH_TTY && $TERM == *kitty* ]]; }
@@ -149,7 +243,7 @@ for osw in d:
   [[ $sides == *left*  ]] && _LCARS_HAS_LEFT=1
   [[ $sides == *right* ]] && _LCARS_HAS_RIGHT=1
 }
-TRAPWINCH() { _LCARS_PANE_DIRTY=1 }   # coalesce; precmd recomputes lazily when dirty
+TRAPWINCH() { _LCARS_PANE_DIRTY=1; _LCARS_CELL_DIRTY=1 }   # coalesce; precmd recomputes lazily when dirty
 
 # ---- segment values (plain text) -------------------------------------------
 _lcars_git_branch() {
@@ -218,6 +312,15 @@ _lcars_swoop_preexec() {
 # ---- precmd ----------------------------------------------------------------
 _lcars_swoop_precmd() {
   local last_exit=$?
+
+  # Re-probe cell size after a WINCH (font zoom / display change / SIGWINCH). If it
+  # changed, _lcars_probe_cell_size clears _LCARS_IMAGES_SENT so _lcars_transmit_images
+  # sends the fresh set. _lcars_ensure_assets is cheap when the PNGs already exist.
+  if [[ -n $_LCARS_CELL_DIRTY ]]; then
+    _lcars_probe_cell_size
+    _lcars_ensure_assets
+    _LCARS_CELL_DIRTY=
+  fi
 
   if ! _lcars_graphics_ok; then
     local gi; gi=$(_lcars_git_seg)
@@ -312,10 +415,11 @@ _lcars_swoop_precmd() {
   # leaving a pinned, dangling elbow/cap in scrollback. Printing the rows with trailing
   # newlines lets the terminal scroll them naturally (no reserve/relative-cursor dance).
   _lcars_transmit_images
-  # The bar-abutting edge is the LAST col of the left end and col 0 of the right end (true for
-  # both the elbow and the cap on each side); pass it as flat-col so its cell blends into the
-  # bar (no 1px seam). See _lc_ph.
-  local -i lflat=$(( left_w - 1 )) rflat=0
+  # The bar-abutting edge is the LAST col of the left end; pass it as flat-col so its cell
+  # blends into the bar (no 1px seam). See _lc_ph. The right cap's left edge (col 0) is fully
+  # opaque at all rows so no seam fix is needed there — cap cells get black bg (default, -1)
+  # so the arc's transparent corners show the terminal void, making the round shape visible.
+  local -i lflat=$(( left_w - 1 )) rflat=-1
   # bar row 0 (top): [left end] [left lead] chip colors blank + fill + blank notch + [right lead] [right end]
   _lc_ph "$left_id" 0 "$left_w" "$lflat"; _lc_bg "$_LC_O"; _lc_sp "$left_lead"
   LC_ROWMODE=blank _lcars_chips "${chips[@]}"
@@ -358,9 +462,21 @@ _lcars_prompt_enable() {
   add-zsh-hook precmd  _lcars_swoop_precmd
   add-zsh-hook preexec _lcars_swoop_preexec
   _LCARS_PROMPT_ON=1
-  _LCARS_IMAGES_SENT=   # re-transmit the placeholder images on (re-)enable / re-source
-  # Arm pane detection for the first prompt (only consulted when split-swoop is enabled).
+  # Probe kitty's actual cell.width/height first so we transmit correctly-sized PNGs.
+  # Any mismatch produces a 1-2 device-px aspect-fit inset in the elbow stem.
+  _lcars_probe_cell_size
+  _lcars_ensure_assets
+  # Transmit images immediately so they are registered before the first precmd fires.
+  # If transmission and placeholder rendering happen in the same output flush, kitty
+  # may not have processed the image before drawing the placeholders, causing the first
+  # prompt's elbow to appear shifted. Transmitting here (at enable time, before any
+  # precmd) ensures the image is ready when the first bar is drawn.
+  _LCARS_IMAGES_SENT=
+  _lcars_transmit_images
+  # Arm pane detection for the first prompt (only consulted when split-swoop is enabled)
+  # and clear the cell-size dirty flag so precmd doesn't reprobe on the very first draw.
   _LCARS_PANE_CHECKED=; _LCARS_PANE_DIRTY=1
+  _LCARS_CELL_DIRTY=
   if zle; then zle reset-prompt; fi
   return 0
 }
