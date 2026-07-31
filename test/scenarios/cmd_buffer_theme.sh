@@ -14,6 +14,10 @@ H="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/screenshot_harness.sh"
 
 mkdir -p /tmp/lcarcat-screenshots
 
+# Always tear down the test kitty (and its nvim/shell children) when this
+# scenario exits — normal, error, or interrupt. Screenshots on disk survive.
+trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM
+
 "$H" launch
 sleep 1.5
 
@@ -34,4 +38,4 @@ sleep 0.2
 sleep 0.3
 "$H" snapshot "04-shell-focused-cmd-inactive"
 
-"$H" teardown
+# Teardown runs via the EXIT trap above.

@@ -22,7 +22,9 @@
 #   04-cmd-buffer-with-text   — text in command buffer; orange gutter distinct from left pane
 #   05-nvim-pane-focused      — focus back on nvim; command buffer border/gutter goes muted
 #
-# Output: one PNG path per line (NOT torn down — preserved for manual comparison)
+# Output: one PNG path per line. Screenshots persist in /tmp/lcarcat-screenshots/;
+# the live test kitty is torn down on exit so no processes leak. Set
+# LCARCAT_KEEP_ALIVE=1 to preserve the live kitty for manual inspection.
 
 set -euo pipefail
 
@@ -30,6 +32,12 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 H="$REPO/test/screenshot_harness.sh"
 SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
 DEMO_FILE="$REPO/demos/swoop_preview.sh"
+
+# Ensure the test kitty and its nvim/shell children die on normal exit, error,
+# or interrupt — unless the user opts into keeping it for manual inspection.
+if [ "${LCARCAT_KEEP_ALIVE:-0}" != "1" ]; then
+    trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM
+fi
 
 # Returns the kitty window id of the most recently focused window.
 _newest_window_id() {
@@ -104,5 +112,9 @@ kitty @ --to "$SOCK" focus-window --match "id:$WIN_LEFT"
 sleep 0.3
 "$H" snapshot "05-nvim-pane-focused"
 
-# Do NOT teardown — preserve screenshots and the live window for manual review
 echo "Screenshots preserved in ${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
+if [ "${LCARCAT_KEEP_ALIVE:-0}" = "1" ]; then
+    echo "LCARCAT_KEEP_ALIVE=1 — test kitty left running for manual inspection." >&2
+    echo "Run '$H teardown' to clean up." >&2
+fi
+# Teardown runs via the EXIT trap above (unless LCARCAT_KEEP_ALIVE=1).

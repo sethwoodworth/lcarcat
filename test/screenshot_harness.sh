@@ -15,10 +15,17 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
 SOCK_PATH="${SOCK#unix:}"
+PID_FILE="${LCARCAT_TEST_PID_FILE:-${SOCK_PATH}.pid}"
 SHOT_DIR="${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
 TEST_CONF="$REPO/test/kitty_test.conf"
 
 _kitty_at() { kitty @ --to "$SOCK" "$@"; }
+
+# Find the kitty process bound to our unique --listen-on socket.
+# Returns empty string if none is running.
+_find_kitty_pid() {
+    pgrep -f "kitty.*--listen-on=$SOCK" 2>/dev/null | head -n1
+}
 
 _get_window_id() {
     _kitty_at ls 2>/dev/null | python3 -c "
@@ -45,7 +52,33 @@ case "$cmd" in
       echo "ERROR: kitty socket never appeared at $SOCK_PATH" >&2
       exit 1
     fi
+    # Record the kitty pid so teardown can force-kill if remote-control fails.
+    pid="$(_find_kitty_pid)"
+    if [ -n "$pid" ]; then
+      echo "$pid" > "$PID_FILE"
+    fi
     mkdir -p "$SHOT_DIR"
+    # Move window to the external display if LCARCAT_TEST_DISPLAY=external is set.
+    # The Dell P2715Q sits at NSScreen origin (-192, 1117) in logical points.
+    # We move by PID rather than window title since kitty may override the title.
+    if [[ "${LCARCAT_TEST_DISPLAY:-}" == "external" ]]; then
+      sleep 0.5  # give the window time to appear before moving it
+      move_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+      if [[ -n "$move_pid" ]]; then
+        osascript - "$move_pid" <<'APPLESCRIPT'
+on run argv
+  set targetPID to (item 1 of argv) as integer
+  tell application "System Events"
+    tell (first process whose unix id is targetPID)
+      set frontmost to true
+      set position of front window to {-150, 1160}
+    end tell
+  end tell
+end run
+APPLESCRIPT
+      fi
+      sleep 0.3
+    fi
     ;;
 
   snapshot)
@@ -93,8 +126,36 @@ case "$cmd" in
     ;;
 
   teardown)
+    # Idempotent: safe to run when no test kitty is up. Never fails the caller.
+    pid=""
+    if [ -f "$PID_FILE" ]; then
+      pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    fi
+    if [ -z "$pid" ]; then
+      pid="$(_find_kitty_pid)"
+    fi
+
+    # Politely close every window; kitty exits when the last window is gone,
+    # which SIGHUPs child processes (nvim, shells) and takes them down too.
     _kitty_at close-window --all-windows 2>/dev/null || true
-    rm -f "$SOCK_PATH"
+
+    # If kitty is still alive after a short grace period, kill it and its children.
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      for i in $(seq 1 20); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        # SIGTERM the whole process tree, then SIGKILL any stragglers.
+        pkill -TERM -P "$pid" 2>/dev/null || true
+        kill -TERM "$pid" 2>/dev/null || true
+        sleep 0.3
+        pkill -KILL -P "$pid" 2>/dev/null || true
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
+    fi
+
+    rm -f "$SOCK_PATH" "$PID_FILE"
     ;;
 
   *)
