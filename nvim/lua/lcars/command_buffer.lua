@@ -38,8 +38,8 @@ local M = {}
 
 local MINIMUM_LINES = 4
 
--- Find the kitty window ID of the sibling pane (the shell above this split).
--- Calls `kitty @ ls` synchronously — fast on the local unix socket.
+-- Find the kitty window ID of the pane directly above this split.
+-- neighbors.top contains group IDs, not window IDs — must resolve via tab.groups.
 local function target_window_id()
   local my_id = tonumber(vim.env.KITTY_WINDOW_ID)
   local raw = vim.fn.system("kitty @ ls 2>/dev/null")
@@ -48,13 +48,24 @@ local function target_window_id()
   if not ok or type(data) ~= "table" then return nil end
   for _, os_win in ipairs(data) do
     for _, tab in ipairs(os_win.tabs or {}) do
-      local in_tab = false
-      for _, w in ipairs(tab.windows or {}) do
-        if w.id == my_id then in_tab = true; break end
+      -- Build group_id -> window_id map; neighbors use group IDs, not window IDs.
+      local group_to_win = {}
+      for _, group in ipairs(tab.groups or {}) do
+        if group.windows and group.windows[1] then
+          group_to_win[group.id] = group.windows[1]
+        end
       end
-      if in_tab then
-        for _, w in ipairs(tab.windows or {}) do
-          if w.id ~= my_id then return w.id end
+      for _, w in ipairs(tab.windows or {}) do
+        if w.id == my_id then
+          local top = (w.neighbors or {}).top
+          if top and top ~= vim.NIL and type(top) == "table" and top[1] then
+            return group_to_win[top[1]]
+          end
+          -- Fallback: first sibling window in the same tab.
+          for _, sibling in ipairs(tab.windows or {}) do
+            if sibling.id ~= my_id then return sibling.id end
+          end
+          return nil
         end
       end
     end
