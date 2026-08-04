@@ -1,37 +1,42 @@
 # AGENTS.md — working rules for agents on lcarcat
 
-## Core rendering principle: minimum viable image
+**New to this repo?** Read `docs/codebase-overview.md` first — repo layout, subsystem map, and navigation to all specialist docs.
 
-- **Use the minimum viable image.** PNGs are drawn *only* where a shape actually curves — the elbow corner and the right round cap. Nothing else.
-- **Use background cells everywhere you can.** Every flat run is colored terminal cells, never baked into an image.
-- When adding a visual element, ask "can this be a background cell?" first. It almost always can.
+---
 
-→ See `docs/lcars-design.md` for the full rendering philosophy and LCARS design rules.
+## Task routing
 
-## Images must match their placement size
+Load only the docs relevant to your task:
 
-An image placed with the kitty protocol is scaled to the `c×r` cells it's given. If the source PNG's proportions don't match, it produces a sub-cell aspect-fit inset that misaligns the elbow stem. Match `cellw`/`cellh` exactly to kitty's CSI 16t reply.
+| Working on… | Read first |
+|-------------|-----------|
+| zsh LCARS prompt | `docs/zsh-prompt.md`, `docs/asset-pipeline.md` |
+| kitty config or image rendering | `docs/kitty-graphics.md`, `docs/asset-pipeline.md` |
+| nvim chrome (elbows, caps, frame) | `docs/nvim-chrome.md`, `docs/asset-pipeline.md` |
+| colors or palette | `docs/palette.md` |
+| screenshot tests | `docs/testing.md` |
+| deploy or file mappings | `docs/deployment.md` |
+| design or layout decisions | `docs/lcars-design.md` |
 
-→ See `docs/kitty-graphics.md` for the aspect-fit math and `docs/asset-pipeline.md` for the cell-probe + regen loop.
+---
 
-## nvim chrome
+## Invariants
 
-→ See `docs/nvim-chrome.md` for the full engineering notes: the float `+1` trap, windowless images, outer-frame-only model, baked negative space, geometry API gotchas, debounced refresh, and `tabline_visible` gate.
+**Minimum viable image.** PNGs only where a shape curves — the elbow corner and right round cap. Everything else is background-colored terminal cells. Ask "can this be a background cell?" first.
 
-## Glyphs and style
+**Image sizing.** PNG pixel dimensions must equal `cols × cellw` by `rows × cellh` exactly, where `cellw`/`cellh` come from kitty's CSI 16t reply. Any mismatch causes a sub-cell aspect-fit inset. → `docs/kitty-graphics.md`, `docs/asset-pipeline.md`
 
-- LCARS is solid geometric shapes and color, not icon-font glyphs. Avoid `✘ ✓ ⚠ ⏱ →`.
-- **No T/+ junctions.** Bars meet stems only via 2-sided elbows; free ends get caps.
-- **Spell words out in full.** Do not abbreviate labels/identifiers without asking first (`MODIFIED`, not `MOD`; `UNTRACKED`, not `UNTRK`).
-- Established idioms: chips use the `NN-WORD` dashed form (e.g. `03-STAGED`); labels are uppercase; leading-zero / Long-Now styling for numbers.
+**Glyphs and style.**
+- No icon-font glyphs. Avoid `✘ ✓ ⚠ ⏱ →`.
+- No T/+ junctions. Bars meet stems via 2-sided elbows; free ends get caps.
+- Spell words out in full — no abbreviations without asking (`MODIFIED` not `MOD`).
+- Chips use `NN-WORD` dashed form (e.g. `03-STAGED`); labels uppercase; Long-Now numbers.
 
-→ See `docs/lcars-design.md` for structural rules and glyph kit.
+→ `docs/lcars-design.md` for structural rules and glyph kit.
 
-## Deployment
+**Deployment.** Run `./deploy.sh` after every edit (`--dry-run` to preview). Changes must land in the repo and the deployed `~/.config` copy. → `docs/deployment.md`
 
-Run **`./deploy.sh`** from the repo root after any edit (`./deploy.sh --dry-run` to preview). Edits must land in the repo **and** the deployed `~/.config` copy.
-
-→ See `docs/deployment.md` for the full file-mapping table.
+---
 
 ## Agent session behavior
 
