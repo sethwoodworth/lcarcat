@@ -49,7 +49,11 @@ hi("Folded",        { fg = p.sky, bg = p.bg_dim })
 -- number-gutter stem) so splits read as LCARS rails the corner elbows merge into.
 hi("VertSplit",     { fg = p.stem, bg = p.stem })
 hi("WinSeparator",  { fg = p.stem, bg = p.stem })
-hi("EndOfBuffer",   { fg = p.bg })
+-- EOB rows get no LineNr cell unless statuscolumn is set; without it the gutter
+-- goes black below the last line. statuscolumn forces %#LineNr# on every row.
+hi("EndOfBuffer",   { fg = p.bg, bg = p.bg })
+vim.opt.fillchars:append({ eob = " " })
+vim.opt.statuscolumn = "%#LineNr#%=%l%#LineNr# "
 hi("Visual",        { fg = p.bg, bg = p.periwinkle })
 hi("VisualNOS",     { fg = p.bg, bg = p.periwinkle })
 hi("Search",        { fg = p.bg, bg = p.gold })
