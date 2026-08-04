@@ -17,7 +17,7 @@ SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
 SOCK_PATH="${SOCK#unix:}"
 PID_FILE="${LCARCAT_TEST_PID_FILE:-${SOCK_PATH}.pid}"
 SHOT_DIR="${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
-TEST_CONF="$REPO/test/kitty_test.conf"
+TEST_CONF="${LCARCAT_TEST_CONF:-$REPO/test/kitty_test.conf}"
 
 _kitty_at() { kitty @ --to "$SOCK" "$@"; }
 
