@@ -5,13 +5,13 @@
   "hooks": {
     "PostToolUse": [
       {
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "command": "echo 'DEPLOY: run ./deploy.sh to mirror this change to ~/.config (skip for docs-only files: README.md, ROADMAP.md, AGENTS.md, .beads/, docs/)'",
             "type": "command"
           }
-        ],
-        "matcher": "Edit|Write"
+        ]
       }
     ],
     "SessionStart": [
