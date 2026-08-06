@@ -44,7 +44,9 @@ Load only the docs relevant to your task:
 
 - **Track conversational decisions in beads as they happen.** When the user clarifies requirements, makes a design choice, or rules something out, add it to the relevant bead's `--notes` or `--design` field immediately.
 - **Claim beads before starting work.** Run `bd update <id> --claim`.
-- **Close beads only after the user validates the change**, not just after deploying.
+- **For visual/rendering changes, run screenshot tests and show results before asking for sign-off.** Do not rely on deploy alone — use the scenario harness in `test/scenarios/`.
+- **Close beads only after the user explicitly confirms the change is working**, not just after deploying.
+- **When closing a bead, create a git commit at the same time.** Close and commit are a single step.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
