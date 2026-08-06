@@ -382,27 +382,73 @@ _lcars_swoop_precmd() {
   cwd="${(%):-%~}"
   aws=$(_lcars_aws_seg)
 
-  # Build chip list (label text incl. padding, color).
-  local -a chips
-  [[ -n $estat ]] && chips+=(" $estat " "$_LC_RED")
-  [[ -n $venv   ]] && chips+=(" $venv "   "$_LC_LIL")
-  [[ -n $py     ]] && chips+=(" $py "     "$_LC_PERI")
+  # Build chip groups (label text incl. padding, color).
+  # Groups are assembled separately so they can be dropped in priority order when the
+  # bar is too narrow. Drop order (lowest priority first): aws, py, git-state, venv, branch.
+  # The error chip is never dropped.
+  local -a chips_err chips_venv chips_py chips_aws chips_branch chips_state
+  [[ -n $estat ]] && chips_err=(" $estat " "$_LC_RED")
+  [[ -n $venv   ]] && chips_venv=(" $venv "   "$_LC_LIL")
+  [[ -n $py     ]] && chips_py=(" $py "     "$_LC_PERI")
   if [[ -n $aws ]]; then
     local aws_color=$_LC_AWS
     [[ $AWS_PROFILE == dep ]] && aws_color=$_LC_RED
-    chips+=("$aws" "$aws_color")
+    chips_aws+=("$aws" "$aws_color")
   fi
-  # git: branch + one gold "NN-WORD" chip per non-empty state (staged/modified/untracked)
   if [[ -n $gbranch ]]; then
-    chips+=(" $gbranch " "$_LC_GOLD")
+    chips_branch=(" $gbranch " "$_LC_GOLD")
     local -a gc; gc=(${(s: :)$(_lcars_git_counts)})
-    (( gc[1] )) && chips+=(" $(printf '%02d-%s' $gc[1] $_LC_GIT_STAGED) "    "$_LC_GOLD")
-    (( gc[2] )) && chips+=(" $(printf '%02d-%s' $gc[2] $_LC_GIT_MODIFIED) "  "$_LC_GOLD")
-    (( gc[3] )) && chips+=(" $(printf '%02d-%s' $gc[3] $_LC_GIT_UNTRACKED) " "$_LC_GOLD")
+    (( gc[1] )) && chips_state+=(" $(printf '%02d-%s' $gc[1] $_LC_GIT_STAGED) "    "$_LC_GOLD")
+    (( gc[2] )) && chips_state+=(" $(printf '%02d-%s' $gc[2] $_LC_GIT_MODIFIED) "  "$_LC_GOLD")
+    (( gc[3] )) && chips_state+=(" $(printf '%02d-%s' $gc[3] $_LC_GIT_UNTRACKED) " "$_LC_GOLD")
   fi
 
   local ptxt=" $cwd "
   local -i mid=$(( COLUMNS - left_w - right_w ))       # cells between the two end images
+
+  # _lcars_row_fits: return 0 (true) if the given chips array + ptxt fits in mid cols.
+  _lcars_row_fits() {
+    local -a _chips=("${@}")
+    local -i _cw=0 _i _n=$(( $#_chips / 2 ))
+    for (( _i=1; _i<=$#_chips; _i+=2 )); do (( _cw += ${#_chips[_i]} )); done
+    local -i _gw=0; (( _n > 0 )) && _gw=$(( _n + 1 ))
+    local -i _am=$(( 2 + ${#ptxt} + right_lead ))
+    return $(( (mid - left_lead - _cw - _gw - _am) < 0 ))
+  }
+
+  # Assemble all groups; iteratively drop lowest-priority groups until the row fits.
+  local -a chips
+  chips=("${chips_err[@]}" "${chips_venv[@]}" "${chips_py[@]}" "${chips_aws[@]}"
+         "${chips_branch[@]}" "${chips_state[@]}")
+  if ! _lcars_row_fits "${chips[@]}"; then
+    chips=("${chips_err[@]}" "${chips_venv[@]}" "${chips_py[@]}"
+           "${chips_branch[@]}" "${chips_state[@]}")           # drop aws
+    if ! _lcars_row_fits "${chips[@]}"; then
+      chips=("${chips_err[@]}" "${chips_venv[@]}"
+             "${chips_branch[@]}" "${chips_state[@]}")         # drop aws + py
+      if ! _lcars_row_fits "${chips[@]}"; then
+        chips=("${chips_err[@]}" "${chips_venv[@]}" "${chips_branch[@]}")  # drop aws + py + state
+        if ! _lcars_row_fits "${chips[@]}"; then
+          chips=("${chips_err[@]}" "${chips_branch[@]}")       # drop aws + py + state + venv
+          if ! _lcars_row_fits "${chips[@]}"; then
+            chips=("${chips_err[@]}")                          # drop all except error
+          fi
+        fi
+      fi
+    fi
+  fi
+  unfunction _lcars_row_fits
+
+  # If still too narrow even with no chips, shorten the path notch.
+  local -i mid_floor=$(( mid - left_lead - right_lead - 2 ))  # cols available for ptxt (when chipless)
+  if (( $#chips == 0 && mid_floor < ${#ptxt} )); then
+    if (( mid_floor >= 5 )); then
+      ptxt=" ${${ptxt[2,-2]}:0:$(( mid_floor - 2 ))} "
+    else
+      ptxt=" ~ "   # absolute minimum; bar degrades to elbow + fill + cap
+    fi
+  fi
+
   local -i amotif=$(( 2 + ${#ptxt} + right_lead ))     # black rule + accent col + notch + right lead-in
   local -i chipsw=0 i
   for (( i=1; i<=$#chips; i+=2 )); do (( chipsw += ${#chips[i]} )); done

@@ -83,6 +83,23 @@ Active chips (shown only when non-empty):
 - **git branch** — gold, branch name
 - **git state chips** — gold, `NN-STAGED`, `NN-MODIFIED`, `NN-UNTRACKED` (one chip per non-empty count, zero-padded)
 
+### Narrow-pane chip dropping
+
+When `$COLUMNS` is too small to render all chips in one row, chips are dropped in priority order (lowest first) until the row fits. The error chip is never dropped.
+
+**Drop order:**
+1. AWS chip
+2. Python chip
+3. All three git-state chips (staged/modified/untracked) as a group
+4. Venv chip
+5. Git-branch chip
+
+If no chips remain and the path notch still overflows, `ptxt` is truncated to fit. Below ~5 available cols the notch collapses to ` ~ ` and the bar degrades to elbow + fill + cap.
+
+This is purely a display decision made each `precmd` using `$COLUMNS` — no state is stored. Widening the pane restores all chips on the next prompt.
+
+**Implementation:** `_lcars_swoop_precmd` builds six named arrays (`chips_err`, `chips_venv`, `chips_py`, `chips_aws`, `chips_branch`, `chips_state`) and assembles them into `chips` via a nested-if trim loop with an inline `_lcars_row_fits` helper.
+
 ---
 
 ## Style-A notch (path chip)
