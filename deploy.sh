@@ -41,7 +41,9 @@ mappings=(
   "nvim/lua/lcars/tabline.lua    $CONFIG/nvim/lua/lcars/tabline.lua"
   "nvim/lua/lcars/chrome.lua          $CONFIG/nvim/lua/lcars/chrome.lua"
   "nvim/lua/lcars/command_buffer.lua $CONFIG/nvim/lua/lcars/command_buffer.lua"
+  "nvim/lua/lcars/gutter_eob_fill.lua $CONFIG/nvim/lua/lcars/gutter_eob_fill.lua"
   "nvim/lua/lualine/themes/lcars.lua $CONFIG/nvim/lua/lualine/themes/lcars.lua"
+  ".claude/hooks/kitty-tab-alert.sh  $HOME/.claude/hooks/kitty-tab-alert.sh"
 )
 
 deploy_one() {
