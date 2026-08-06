@@ -14,9 +14,11 @@ Load only the docs relevant to your task:
 | kitty config or image rendering | `docs/kitty-graphics.md`, `docs/asset-pipeline.md` |
 | nvim chrome (elbows, caps, frame) | `docs/nvim-chrome.md`, `docs/asset-pipeline.md` |
 | colors or palette | `docs/palette.md` |
-| screenshot tests | `docs/testing.md` |
+| screenshot tests or evaluating rendering | `docs/testing.md` |
+| evaluating nvim gutter color | `docs/testing.md` — run `test/scenarios/nvim_eob_gutter.sh` |
 | deploy or file mappings | `docs/deployment.md` |
 | design or layout decisions | `docs/lcars-design.md` |
+| any text output, glyphs, or symbols (shell scripts, hooks, prompts) | `docs/lcars-design.md` (glyph kit) |
 
 ---
 

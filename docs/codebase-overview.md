@@ -27,6 +27,9 @@ lcarcat/
 ├── docs/                       — engineering reference docs (this directory)
 ├── test/
 │   ├── screenshot_harness.sh   — drive kitty via remote control, capture screenshots
+│   ├── analyze_left_edge.py    — raw pixel row scan for elbow/stem alignment
+│   ├── analyze_gutter_cells.py — cell-center pixel sampler; asserts gutter column bg color
+│   ├── get_cell_grid.py        — kitty @ get-text parser; asserts semantic SGR bg color
 │   └── scenarios/              — named test scripts (prompt alignment, resize, nvim)
 ├── demos/                      — preview scripts for visual elements
 ├── deploy.sh                   — copy repo files to ~/.config; run after every edit
