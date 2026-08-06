@@ -129,3 +129,50 @@ Two exported values that other modules consume:
 
 - `chrome.width()` — column span of the top-left corner (= `stem + 2`). The tabline blacks out this area and starts its first pill past it.
 - `chrome.right_pad()` — columns the statusline must reserve on its right so a vertical-split's far-right rounded cap doesn't overlay the position text. 0 when there's no such cap.
+
+---
+
+## EOB gutter fill — floating window approach
+
+**Problem:** below the last line of content, the gutter column goes black. Three approaches were evaluated:
+
+| Approach | Result |
+|---|---|
+| `statuscolumn = "%#LineNr#..."` | Fails — nvim 0.12.2 does **not** evaluate `statuscolumn` for EOB virtual rows at all (confirmed: `%{v:virtnum}` outputs nothing on those rows) |
+| `winhighlight=EndOfBuffer:SignColumn` | Fails — colors the full row width, bleeding into the text area |
+| `statuscol.nvim` with `hl` per segment | Fails — depends on the same `statuscolumn` evaluation path nvim skips for EOB rows |
+| **Minimal float window** | **Works** — paints exactly the gutter cells, text area untouched |
+
+### The float approach
+
+A `style="minimal"` floating window anchored `relative="win"` at the first EOB row, sized to exactly cover the gutter columns:
+
+```lua
+local wi = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
+local eob_rows = wi.height - wi.botline
+-- open or resize float:
+nvim_open_win(buf, false, {
+  relative = "win", row = wi.botline, col = 0,
+  width = wi.textoff, height = eob_rows,
+  style = "minimal", focusable = false,
+})
+vim.wo[float_win].winhighlight = "Normal:SignColumn"
+```
+
+**Key fields:** `wi.botline` = last rendered buffer line (1-indexed), `wi.textoff` = gutter width in columns, `wi.height` = window height in rows.
+
+### Events
+
+Four autocmds, each doing one `getwininfo()` + one `nvim_win_set_config()` (or open/close):
+
+```
+BufEnter, WinEnter   -- buffer/focus change may alter botline or textoff
+WinResized           -- window height changed
+WinScrolled          -- user scrolled; botline changes
+```
+
+When `eob_rows <= 0` (file fills the window), close the float. Use the same debounce token pattern as chrome.lua's `schedule_refresh`.
+
+### Interaction with the bottom-left elbow
+
+The bottom-left elbow image (placed by chrome.lua at `y = statusline_row - 1`) sits below the EOB fill float. They don't overlap as long as the file has at least one EOB row above the elbow row. No coordination needed.

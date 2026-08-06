@@ -54,6 +54,7 @@ hi("WinSeparator",  { fg = p.stem, bg = p.stem })
 hi("EndOfBuffer",   { fg = p.bg, bg = p.bg })
 vim.opt.fillchars:append({ eob = " " })
 vim.opt.statuscolumn = "%#LineNr#%=%l%#LineNr# "
+require("lcars.gutter_eob_fill").setup()
 hi("Visual",        { fg = p.bg, bg = p.periwinkle })
 hi("VisualNOS",     { fg = p.bg, bg = p.periwinkle })
 hi("Search",        { fg = p.bg, bg = p.gold })
