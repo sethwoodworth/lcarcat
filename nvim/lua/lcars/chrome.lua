@@ -322,30 +322,47 @@ end
 -- rendering (delivery via image.nvim)
 -- ---------------------------------------------------------------------------
 local function clear_all()
-  for _, img in ipairs(state.imgs) do
+  for _, img in pairs(state.imgs) do
     pcall(function() img:clear() end)
   end
   state.imgs = {}
 end
 
+-- Stable key for a placement: asset name encodes shape/dims/color; x,y is screen pos.
+local function placement_key(pl) return pl.name .. "@" .. pl.x .. "," .. pl.y end
+
 -- Windowless, absolutely-positioned images. With no `window`/`buffer`, image.nvim's
 -- renderer places at absolute screen (geometry.x, geometry.y) and skips the float
--- offset / per-window clamps. Each from_file gets a fresh random id, so reusing one
--- PNG across several windows does not collide.
+-- offset / per-window clamps. state.imgs is keyed by placement_key so we only
+-- create/render images that are new or changed; stale keys are cleared in place.
 local function render_all(pls)
-  clear_all()
   if not ok_image then
     vim.notify("lcars.chrome: image.nvim not available", vim.log.levels.ERROR)
     return
   end
-  for _, pl in ipairs(pls) do
-    local img = image.from_file(asset_path(pl.name, pl.stem), {
-      x = pl.x, y = pl.y, width = pl.w, height = pl.h,
-    })
-    if img then
-      img.ignore_global_max_size = true
-      img:render()
-      state.imgs[#state.imgs + 1] = img
+
+  local desired = {}
+  for _, pl in ipairs(pls) do desired[placement_key(pl)] = pl end
+
+  -- Clear placements no longer needed.
+  for key, img in pairs(state.imgs) do
+    if not desired[key] then
+      pcall(function() img:clear() end)
+      state.imgs[key] = nil
+    end
+  end
+
+  -- Create and render only new placements.
+  for key, pl in pairs(desired) do
+    if not state.imgs[key] then
+      local img = image.from_file(asset_path(pl.name, pl.stem), {
+        x = pl.x, y = pl.y, width = pl.w, height = pl.h,
+      })
+      if img then
+        img.ignore_global_max_size = true
+        img:render()
+        state.imgs[key] = img
+      end
     end
   end
 end
