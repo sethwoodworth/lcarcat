@@ -5,6 +5,12 @@
 
 if vim.env.LCARCAT_COMMAND_BUFFER ~= "1" then return {} end
 
+local pickers      = require("telescope.pickers")
+local finders      = require("telescope.finders")
+local conf         = require("telescope.config").values
+local actions      = require("telescope.actions")
+local action_state = require("telescope.actions.state")
+
 -- LCARS input-panel theming: orange stem marks this as an active input panel,
 -- distinct from the periwinkle display-panel stem in the shell pane above.
 -- All overrides are window-local via winhighlight — no bleed into normal nvim.
@@ -127,7 +133,62 @@ vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 -- Also resize once on load in case the initial bias is smaller than MINIMUM_LINES.
 vim.schedule(M.resize)
 
+-- Open a telescope picker over ~/.histfile, most-recent first, and populate
+-- the buffer with the selected entry.
+function M.history_search()
+  local histfile = vim.env.HOME .. "/.histfile"
+  local fh = io.open(histfile, "r")
+  if not fh then
+    vim.notify("lcars.command_buffer: cannot read " .. histfile, vim.log.levels.WARN)
+    return
+  end
+
+  -- Deduplicate: last occurrence of each command wins (most recent context).
+  local ordered = {}
+  local seen = {}
+  for line in fh:lines() do
+    if line ~= "" then
+      if seen[line] then
+        -- remove the earlier occurrence so the later one ends up at the back
+        for i, v in ipairs(ordered) do
+          if v == line then table.remove(ordered, i); break end
+        end
+      end
+      table.insert(ordered, line)
+      seen[line] = true
+    end
+  end
+  fh:close()
+
+  -- Reverse so index 1 = most recent.
+  local entries = {}
+  for i = #ordered, 1, -1 do
+    table.insert(entries, ordered[i])
+  end
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  pickers.new({}, {
+    prompt_title = "Zsh History",
+    finder = finders.new_table({ results = entries }),
+    sorter = conf.generic_sorter({}),
+    attach_mappings = function(prompt_bufnr_inner)
+      actions.select_default:replace(function()
+        local selection = action_state.get_selected_entry()
+        actions.close(prompt_bufnr_inner)
+        if selection then
+          local lines = vim.split(selection[1], "\n", { plain = true })
+          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+          vim.schedule(function() vim.cmd("startinsert!") end)
+        end
+      end)
+      return true
+    end,
+  }):find()
+end
+
 -- <CR> in normal mode submits the buffer.
-vim.keymap.set("n", "<CR>", M.submit, { buffer = true, desc = "Submit command buffer to shell" })
+vim.keymap.set("n", "<CR>",      M.submit,         { buffer = true, desc = "Submit command buffer to shell" })
+vim.keymap.set("n", "<leader>r", M.history_search, { buffer = true, desc = "Search zsh history" })
+vim.keymap.set("i", "<leader>r", M.history_search, { buffer = true, desc = "Search zsh history" })
 
 return M
