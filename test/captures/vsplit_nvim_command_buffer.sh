@@ -37,49 +37,19 @@ export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
 # Ensure the test kitty and its nvim/shell children die on normal exit, error,
 # or interrupt — unless the user opts into keeping it for manual inspection.
-if [ "${LCARCAT_KEEP_ALIVE:-0}" != "1" ]; then
-    trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM
-fi
-
-# Returns the kitty window id of the most recently focused window.
-_newest_window_id() {
-    kitty @ --to "$SOCK" ls 2>/dev/null | python3 -c "
-import sys, json
-tabs = json.load(sys.stdin)[0]['tabs']
-windows = [w for t in tabs for w in t['windows']]
-# most recent window is last in the recency list
-recency = [w for w in windows if w.get('is_focused')]
-if recency:
-    print(recency[0]['id'])
-    sys.exit(0)
-# fallback: highest id
-print(max(w['id'] for w in windows))
-"
-}
-
-# Returns the kitty window id of the focused window.
-_focused_window_id() {
-    kitty @ --to "$SOCK" ls 2>/dev/null | python3 -c "
-import sys, json
-tabs = json.load(sys.stdin)[0]['tabs']
-for t in tabs:
-    for w in t['windows']:
-        if w.get('is_focused'):
-            print(w['id']); sys.exit(0)
-sys.exit(1)
-"
-}
+source "$REPO/test/nvim_harness_helpers.sh"
+nvim_harness_setup "$H" "$SOCK" "$SHOT_DIR"
 
 "$H" launch
 sleep 1.5
 
 # Step 1: initial shell is the left window — capture its id
-WIN_LEFT="$(_focused_window_id)"
+WIN_LEFT="$(_nvim_focused_window_id "$SOCK")"
 
 # vsplit launches a new window to the right; kitty focuses it automatically
 kitty @ --to "$SOCK" launch --location=vsplit --bias=50 --cwd=current zsh
 sleep 1.0
-WIN_RIGHT="$(_focused_window_id)"
+WIN_RIGHT="$(_nvim_focused_window_id "$SOCK")"
 
 "$H" snapshot "01-shell-vsplit"
 
@@ -101,7 +71,7 @@ kitty @ --to "$SOCK" launch \
     -c "lua require('lcars.command_buffer')" \
     -c "startinsert"
 sleep 3.0
-WIN_CMD="$(_focused_window_id)"
+WIN_CMD="$(_nvim_focused_window_id "$SOCK")"
 "$H" snapshot "03-cmd-buffer-right"
 
 # Step 4: type into the command buffer (it is focused)

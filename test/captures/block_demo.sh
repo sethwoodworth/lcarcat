@@ -32,7 +32,7 @@ WIN="$(_nvim_focused_window_id "$SOCK")"
 nvim_open "$SOCK" "$WIN"
 
 # Run the block demo renderer.
-nvim_run_cmd "$SOCK" "$WIN" "lua require('lcars.block_demo').render()"
+nvim_run_cmd "$SOCK" "$WIN" "lua require('lcars.block_demo').render_all()"
 sleep 0.5
 
 # ── nvim message check (abort if errors) ─────────────────────────────────
