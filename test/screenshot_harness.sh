@@ -43,6 +43,7 @@ case "$cmd" in
       --title=LCARCAT-TEST \
       --listen-on="$SOCK" \
       --config="$TEST_CONF" \
+      --override focus_on_window_creation=false \
       --detach
     for i in $(seq 1 20); do
       [ -S "$SOCK_PATH" ] && break
@@ -70,8 +71,7 @@ on run argv
   set targetPID to (item 1 of argv) as integer
   tell application "System Events"
     tell (first process whose unix id is targetPID)
-      set frontmost to true
-      set position of front window to {-150, 1160}
+      set position of window 1 to {-150, 1160}
     end tell
   end tell
 end run
