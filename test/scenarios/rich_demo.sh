@@ -39,6 +39,8 @@ H="$REPO/test/screenshot_harness.sh"
 SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
 DEMO_CONF="${LCARCAT_TEST_CONF:-$REPO/test/kitty_demo.conf}"
 DEMO_FILE="$REPO/nvim/colors/lcars.lua"
+SHOT_DIR="${LCARCAT_SHOT_DIR:-$REPO/test/screenshots/$(basename "${BASH_SOURCE[0]}" .sh)}"
+export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
 if [ "${LCARCAT_KEEP_ALIVE:-0}" != "1" ]; then
     trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM
@@ -180,7 +182,7 @@ _wait 0.5
 "$H" snapshot "07-cmd-submit"
 
 # ---------------------------------------------------------------------------
-echo "Screenshots saved to ${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
+echo "Screenshots saved to $SHOT_DIR"
 if [ "${LCARCAT_KEEP_ALIVE:-0}" = "1" ]; then
     echo "LCARCAT_KEEP_ALIVE=1 — kitty left running. '$H teardown' to clean up." >&2
 fi

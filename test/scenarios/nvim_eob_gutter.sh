@@ -15,7 +15,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 H="$REPO/test/screenshot_harness.sh"
 FIXTURE="$REPO/test/fixtures/short_file.py"
 SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
-SHOT_DIR="${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
+SHOT_DIR="${LCARCAT_SHOT_DIR:-$REPO/test/screenshots/$(basename "${BASH_SOURCE[0]}" .sh)}"
+export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
 mkdir -p "$SHOT_DIR"
 trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM

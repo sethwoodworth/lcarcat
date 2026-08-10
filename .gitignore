@@ -10,3 +10,6 @@
 
 # Machine-local Claude Code permissions (not shared across machines)
 .claude/settings.local.json
+
+# Per-scenario screenshot output (not committed; may be published separately)
+test/screenshots/

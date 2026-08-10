@@ -10,9 +10,12 @@
 
 set -euo pipefail
 
-H="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/screenshot_harness.sh"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+H="$REPO/test/screenshot_harness.sh"
+SHOT_DIR="${LCARCAT_SHOT_DIR:-$REPO/test/screenshots/$(basename "${BASH_SOURCE[0]}" .sh)}"
+export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
-mkdir -p /tmp/lcarcat-screenshots
+mkdir -p "$SHOT_DIR"
 
 # Always tear down the test kitty (and its nvim/shell children) when this
 # scenario exits — normal, error, or interrupt. Screenshots on disk survive.

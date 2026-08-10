@@ -28,6 +28,8 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 H="$REPO/test/screenshot_harness.sh"
 SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
+SHOT_DIR="${LCARCAT_SHOT_DIR:-$REPO/test/screenshots/$(basename "${BASH_SOURCE[0]}" .sh)}"
+export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
 if [ "${LCARCAT_KEEP_ALIVE:-0}" != "1" ]; then
     trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM
@@ -84,7 +86,7 @@ kitty @ --to "$SOCK" send-text --match "id:$WIN_CMD" $'\r'
 sleep 1.2
 "$H" snapshot "04-after-submit"
 
-echo "Screenshots preserved in ${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
+echo "Screenshots preserved in $SHOT_DIR"
 if [ "${LCARCAT_KEEP_ALIVE:-0}" = "1" ]; then
     echo "LCARCAT_KEEP_ALIVE=1 — test kitty left running for manual inspection." >&2
     echo "Run '$H teardown' to clean up." >&2

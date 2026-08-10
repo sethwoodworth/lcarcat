@@ -7,10 +7,13 @@
 
 set -euo pipefail
 
-H="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/screenshot_harness.sh"
-ASSETS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lcarcat/assets"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+H="$REPO/test/screenshot_harness.sh"
+ASSETS="$REPO/lcarcat/assets"
+SHOT_DIR="${LCARCAT_SHOT_DIR:-$REPO/test/screenshots/$(basename "${BASH_SOURCE[0]}" .sh)}"
+export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
-mkdir -p /tmp/lcarcat-screenshots
+mkdir -p "$SHOT_DIR"
 trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM
 
 "$H" launch

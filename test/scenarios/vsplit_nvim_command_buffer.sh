@@ -32,6 +32,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 H="$REPO/test/screenshot_harness.sh"
 SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
 DEMO_FILE="$REPO/demos/swoop_preview.sh"
+SHOT_DIR="${LCARCAT_SHOT_DIR:-$REPO/test/screenshots/$(basename "${BASH_SOURCE[0]}" .sh)}"
+export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
 # Ensure the test kitty and its nvim/shell children die on normal exit, error,
 # or interrupt — unless the user opts into keeping it for manual inspection.
@@ -112,7 +114,7 @@ kitty @ --to "$SOCK" focus-window --match "id:$WIN_LEFT"
 sleep 0.3
 "$H" snapshot "05-nvim-pane-focused"
 
-echo "Screenshots preserved in ${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
+echo "Screenshots preserved in $SHOT_DIR"
 if [ "${LCARCAT_KEEP_ALIVE:-0}" = "1" ]; then
     echo "LCARCAT_KEEP_ALIVE=1 — test kitty left running for manual inspection." >&2
     echo "Run '$H teardown' to clean up." >&2
