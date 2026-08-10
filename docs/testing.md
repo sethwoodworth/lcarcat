@@ -182,60 +182,79 @@ No `--expect` mode — output is a diagnostic text table for human or agent eval
 
 ---
 
-## Scenarios
+## Test hierarchy
 
-Scenario scripts live in `test/scenarios/`. Each is a standalone shell script that runs a self-contained test using the harness.
+Scripts are split into two directories based on whether they have machine-verifiable exit codes.
 
-| Scenario | What it tests | Has programmatic assertion? |
-|----------|---------------|----------------------------|
-| `nvim_eob_gutter.sh` | Periwinkle gutter continues past end-of-buffer (short file) | Yes — semantic check |
-| `nvim_eob_gutter_scrolled.sh` | Gutter stays periwinkle after `G`+`zt` scroll to end of a long file | Yes — semantic check |
-| `cmd_buffer_theme.sh` | Orange gutter in command buffer, periwinkle above | No — visual inspection |
-| `vsplit_nvim_command_buffer.sh` | Full 2-pane layout with vsplit + command buffer | No — visual inspection |
-| `cmd_buffer_target_pane.sh` | Command buffer sends to correct target pane | No — visual inspection |
-| `prompt_elbow_alignment.sh` | Elbow image aligns with stem bg cell | No — visual inspection |
-| `prompt_left_edge_pixel.sh` | Sub-pixel inset at elbow/LED boundary | No — feed to `analyze_left_edge.py` |
-| `prompt_resize_regen.sh` | Alignment survives mid-session font zoom | No — visual inspection |
-| `trivial_image_alignment.sh` | 1-cell image vs plain bg cell | No — visual inspection |
-| `rich_demo.sh` | Full 3-pane README hero layout | No — visual inspection |
+### test/integration/ — pass/fail, CI-runnable
+
+Each script exits 0 on pass, 1 on failure. Safe to run in CI or as a pre-commit gate.
+
+| Script | What it asserts |
+|--------|-----------------|
+| `nvim_eob_gutter.sh` | Column 0 is periwinkle for all rows (short file, no scroll) |
+| `nvim_eob_gutter_scrolled.sh` | Column 0 stays periwinkle after `G`+`zt` scroll to EOF |
+| `cmd_buffer_target_pane.sh` | Submitted text reaches RIGHT pane; LEFT pane is clean (regression: lcarcat-08g.1) |
+
+Run all integration tests:
+```bash
+for f in test/integration/*.sh; do echo "--- $f ---"; bash "$f" && echo PASS || echo FAIL; done
+```
+
+### test/captures/ — reference screenshots, human-evaluated
+
+These produce PNGs in `test/screenshots/<name>/` but have no programmatic assertion. Run them when you want a reference capture or are evaluating a visual change.
+
+| Script | What it captures |
+|--------|-----------------|
+| `block_demo.sh` | LCARS block frame styles in a scratch buffer |
+| `cmd_buffer_theme.sh` | Orange gutter in command buffer; periwinkle above |
+| `prompt_elbow_alignment.sh` | Elbow image aligned with stem bg cell |
+| `prompt_left_edge_pixel.sh` | Sub-pixel left edge (feed to `analyze_left_edge.py`) |
+| `prompt_resize_regen.sh` | Alignment at baseline, larger, and restored font size |
+| `rich_demo.sh` | Full 3-pane README hero layout |
+| `terminal_frame.sh` | LCARS swoop prompt inside a full-window nvim `:terminal` |
+| `trivial_image_alignment.sh` | 1-cell image vs plain bg cell (uses `test/fixtures/trivial_align_test.py`) |
+| `vsplit_nvim_command_buffer.sh` | Side-by-side nvim + command buffer layout |
 
 ---
 
-## Writing a new scenario
+## Writing a new test or capture
 
-### Template
+**Integration test** (`test/integration/`) — use when you have a machine-verifiable assertion. Exit 0/1 must reflect pass/fail. Use `get_cell_grid.py --expect-bg` or `get-text` + grep for assertions. See existing scripts for patterns.
+
+**Capture script** (`test/captures/`) — use when the question is "does this look right" and there is no programmatic signal. Name the shots clearly; a subagent can evaluate the PNGs independently.
+
+### Integration test template
 
 ```bash
 #!/usr/bin/env bash
-# Scenario: <description>
-# Evaluation criteria:
-#   <label> — <what pass looks like>
+# Integration test: <one-line description>
+# Pass/fail: <what exit 0 means>
 
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$REPO/test/nvim_harness_helpers.sh"
+
 H="$REPO/test/screenshot_harness.sh"
 SOCK="${LCARCAT_TEST_SOCK:-unix:/tmp/lcarcat-test.sock}"
-SHOT_DIR="${LCARCAT_SHOT_DIR:-/tmp/lcarcat-screenshots}"
+SHOT_DIR="${LCARCAT_SHOT_DIR:-$REPO/test/screenshots/$(basename "${BASH_SOURCE[0]}" .sh)}"
+export LCARCAT_SHOT_DIR="$SHOT_DIR"
 
-mkdir -p "$SHOT_DIR"
-trap '"$H" teardown >/dev/null 2>&1 || true' EXIT INT TERM
+nvim_harness_setup "$H" "$SOCK" "$SHOT_DIR"
+"$H" launch && sleep 1.5
+WIN="$(_nvim_focused_window_id "$SOCK")"
 
-"$H" launch
-sleep 1.5
-
-# Drive state here
-"$H" send-text "nvim somefile"$'\n'
-sleep 2.0
-
+nvim_open "$SOCK" "$WIN" "$FIXTURE"
+nvim_check_messages "$SOCK" "$WIN" "my-test"
 "$H" snapshot "01-label"
 
-# Optional: programmatic assertions
-set +e
-python3 "$REPO/test/analyze_gutter_cells.py" "$SHOT_DIR/01-label.png" \
-  --gutter-col 0 --expect-bg periwinkle --verbose
-EXIT=$?
-set -e
+# Hard assertion — exits 1 on failure
+python3 "$REPO/test/get_cell_grid.py" \
+  --socket "$SOCK" --window "$WIN" \
+  --col 0 --skip-rows 1 --skip-bottom 1 \
+  --expect-bg periwinkle --verbose
 
 [[ $EXIT -eq 0 ]] && echo "PASS" || { echo "FAIL"; exit 1; }
 ```
@@ -247,6 +266,25 @@ set -e
 - Use `set +e` / `set -e` around assertion commands that exit nonzero on failure, so the failure is captured in a variable rather than killing the script before the final verdict.
 - Get window IDs via `kitty @ ls` once after `launch`, not inline at every command.
 - Use `id:N` addressing for all `focus-window` and `send-text` calls. Never use `recent:N`.
+- **Check nvim messages before every screenshot.** After any Lua command sent to nvim, query
+  `:messages` via `kitty @ send-text` → `\r` and capture the output before taking the snapshot.
+  An error printed to the nvim message area (e.g. E5108 Lua errors, E474 invalid argument)
+  means the command failed silently from the harness's perspective. If messages contain "Error"
+  or "E[0-9]", abort the test and print the message rather than capturing a misleading screenshot.
+  Practical pattern:
+  ```bash
+  kitty @ --to "$SOCK" send-text --match "id:$WIN" ":lua require('lcars.block_demo').render()\r"
+  sleep 0.5
+  # Capture messages to a temp file; fail fast if nvim reported an error
+  kitty @ --to "$SOCK" send-text --match "id:$WIN" ":redir! > /tmp/nvim_messages.txt | messages | redir END\r"
+  sleep 0.3
+  if grep -qiE '^E[0-9]+:|Error' /tmp/nvim_messages.txt 2>/dev/null; then
+    echo "ABORT: nvim reported errors before screenshot:" >&2
+    cat /tmp/nvim_messages.txt >&2
+    exit 1
+  fi
+  "$H" snapshot "label"
+  ```
 
 ### Adding a programmatic assertion to an existing scenario
 

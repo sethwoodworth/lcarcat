@@ -15,7 +15,7 @@ Load only the docs relevant to your task:
 | nvim chrome (elbows, caps, frame) | `docs/nvim-chrome.md`, `docs/asset-pipeline.md` |
 | colors or palette | `docs/palette.md` |
 | screenshot tests or evaluating rendering | `docs/testing.md` |
-| evaluating nvim gutter color | `docs/testing.md` — run `test/scenarios/nvim_eob_gutter.sh` |
+| evaluating nvim gutter color | `docs/testing.md` — run `test/integration/nvim_eob_gutter.sh` |
 | deploy or file mappings | `docs/deployment.md` |
 | design or layout decisions | `docs/lcars-design.md` |
 | any text output, glyphs, or symbols (shell scripts, hooks, prompts) | `docs/lcars-design.md` (glyph kit) |
@@ -44,7 +44,7 @@ Load only the docs relevant to your task:
 
 - **Track conversational decisions in beads as they happen.** When the user clarifies requirements, makes a design choice, or rules something out, add it to the relevant bead's `--notes` or `--design` field immediately.
 - **Claim beads before starting work.** Run `bd update <id> --claim`.
-- **For visual/rendering changes, run screenshot tests and show results before asking for sign-off.** Do not rely on deploy alone — use the scenario harness in `test/scenarios/`.
+- **For visual/rendering changes, run screenshot tests and show results before asking for sign-off.** Do not rely on deploy alone — run `test/integration/` tests for assertions; use `test/captures/` for reference shots.
 - **Close beads only after the user explicitly confirms the change is working**, not just after deploying.
 - **When closing a bead, create a git commit at the same time.** Close and commit are a single step.
 

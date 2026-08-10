@@ -35,7 +35,7 @@ nvim_harness_setup() {
     local shot_dir="$3"
     mkdir -p "$shot_dir"
     if [ "${LCARCAT_KEEP_ALIVE:-0}" != "1" ]; then
-        trap '"$harness" teardown >/dev/null 2>&1 || true' EXIT INT TERM
+        trap "\"$harness\" teardown >/dev/null 2>&1 || true" EXIT INT TERM
     fi
 }
 
