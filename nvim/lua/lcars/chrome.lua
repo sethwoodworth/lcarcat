@@ -194,14 +194,28 @@ local function compute_placements()
   local tabline_visible = vim.o.showtabline == 2
     or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)
 
+  -- Suppress the top-left corner when the primary window is a terminal buffer:
+  -- the zsh LCARS prompt renders its own bar there, and the chrome image overpaints it.
+  local main_win_is_terminal = false
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local sp = vim.fn.win_screenpos(win)
+    if sp[1] <= 2 and sp[2] == 1 then
+      local buf = vim.api.nvim_win_get_buf(win)
+      if vim.bo[buf].buftype == "terminal" then
+        main_win_is_terminal = true
+      end
+      break
+    end
+  end
+
   if main_stem == 0 then -- gutterless top-left window -> cap the tabline bar
     state.main_W = capcols
-    if tabline_visible then
+    if tabline_visible and not main_win_is_terminal then
       pls[#pls + 1] = { name = channel_name("left", 0), stem = main_stem, x = 0, y = main_row - 2, w = capcols, h = 1 }
     end
   else
     state.main_W = main_stem + 2
-    if tabline_visible then
+    if tabline_visible and not main_win_is_terminal then
       pls[#pls + 1] = { name = corner_name(main_stem, "top"), stem = main_stem, x = 0, y = main_row - 2, w = main_stem + 2, h = H }
     end
   end

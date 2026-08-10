@@ -55,6 +55,7 @@ hi("EndOfBuffer",   { fg = p.bg, bg = p.bg })
 vim.opt.fillchars:append({ eob = " " })
 vim.opt.statuscolumn = "%#LineNr#%=%l%#LineNr# "
 require("lcars.gutter_eob_fill").setup()
+require("lcars.terminal_frame")
 hi("Visual",        { fg = p.bg, bg = p.periwinkle })
 hi("VisualNOS",     { fg = p.bg, bg = p.periwinkle })
 hi("Search",        { fg = p.bg, bg = p.gold })
@@ -92,6 +93,7 @@ hi("TabLineSel",    { fg = p.bg, bg = p.orange, bold = true })
 hi("TabLineFill",   { fg = p.fg, bg = p.bg })
 hi("WinBar",        { fg = p.fg, bg = p.bg })
 hi("WinBarNC",      { fg = p.dim, bg = p.bg })
+hi("LcarsTermBar",  { fg = p.periwinkle, bg = p.periwinkle })
 
 -- ---------------------------------------------------------------------------
 -- Legacy syntax groups

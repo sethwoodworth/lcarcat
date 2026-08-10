@@ -211,7 +211,14 @@ _lcars_ensure_assets() {
   return 0
 }
 
-_lcars_graphics_ok() { [[ -n $KITTY_WINDOW_ID && -z $TMUX && -z $SSH_TTY && $TERM == *kitty* ]]; }
+_lcars_graphics_ok() {
+  # Standard case: direct kitty shell
+  [[ -n $KITTY_WINDOW_ID && -z $TMUX && -z $SSH_TTY && $TERM == *kitty* ]] && return 0
+  # nvim :terminal case: nvim overrides $TERM but kitty graphics still work via
+  # the inherited $KITTY_WINDOW_ID. $NVIM is set by nvim to its socket path.
+  [[ -n $KITTY_WINDOW_ID && -z $TMUX && -z $SSH_TTY && -n $NVIM ]] && return 0
+  return 1
+}
 
 # ---- pane position: is there a split to our right? --------------------------
 # NOTE: dormant unless _LCARS_SPLIT_SWOOP is set (feature disabled by default). Kept so the
