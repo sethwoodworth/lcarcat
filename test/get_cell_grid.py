@@ -245,16 +245,21 @@ def parse_ansi_to_grid(text):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--socket",     required=True, help="kitty listen socket, e.g. unix:/tmp/lcarcat-test.sock")
-    ap.add_argument("--window",     default=None,  help="kitty window id (from kitty @ ls .windows[].id)")
-    ap.add_argument("--col",        type=int, default=0, help="Terminal column to inspect (0-indexed)")
-    ap.add_argument("--skip-rows",  type=int, default=0, help="Skip N rows from the top")
-    ap.add_argument("--skip-bottom",type=int, default=1, help="Skip N rows from the bottom (default: 1 for statusline)")
-    ap.add_argument("--expect-bg",  default=None,  help="Assert this bg color in all sampled cells")
-    ap.add_argument("--verbose",    action="store_true")
+    ap.add_argument("--socket",      required=True, help="kitty listen socket, e.g. unix:/tmp/lcarcat-test.sock")
+    ap.add_argument("--window",      default=None,  help="kitty window id (from kitty @ ls .windows[].id)")
+    # Column-slice mode (default): inspect one column across many rows
+    ap.add_argument("--col",         type=int, default=None, help="Column to inspect (0-indexed); default 0 when --row not set")
+    ap.add_argument("--skip-rows",   type=int, default=0,    help="Skip N rows from the top (column mode)")
+    ap.add_argument("--skip-bottom", type=int, default=1,    help="Skip N rows from the bottom (column mode, default: 1)")
+    # Row-slice mode: inspect one row across many columns
+    ap.add_argument("--row",         type=int, default=None, help="Row to inspect (0-indexed); activates row-slice mode")
+    ap.add_argument("--skip-cols",   type=int, default=0,    help="Skip N columns from the left (row mode)")
+    ap.add_argument("--skip-right",  type=int, default=0,    help="Skip N columns from the right (row mode)")
+    ap.add_argument("--expect-bg",   default=None,  help="Assert this bg color in all sampled cells")
+    ap.add_argument("--scan-bg",     default=None,  help="Print every row where ANY cell in the row matches this bg (diagnostic, no assertion)")
+    ap.add_argument("--verbose",     action="store_true")
     args = ap.parse_args()
 
-    # Build the kitty @ get-text command
     cmd = ["kitty", "@", "--to", args.socket, "get-text", "--ansi", "--extent", "screen"]
     if args.window is not None:
         cmd += ["--match", f"id:{args.window}"]
@@ -274,44 +279,102 @@ def main():
 
     grid = parse_ansi_to_grid(result.stdout)
     total_rows = len(grid)
+    total_cols = max((len(r) for r in grid), default=0)
 
     if total_rows == 0:
         print("FAIL: empty grid returned", file=sys.stderr)
         sys.exit(2)
 
-    end_row = total_rows - args.skip_bottom
-    sampled_rows = range(args.skip_rows, end_row)
-
-    if args.verbose:
-        print(f"Grid: {total_rows} rows x {max(len(r) for r in grid) if grid else 0} cols")
-        print(f"Sampling column {args.col}, rows {args.skip_rows}..{end_row - 1}")
-        print(f"\n{'row':>4}  {'char':>4}  {'fg':>18}  {'bg':>18}")
+    # ── scan-bg mode: find rows containing a given bg color ──────────────
+    if args.scan_bg is not None:
+        scan_rgb = parse_color(args.scan_bg)
+        print(f"Grid: {total_rows} rows x {total_cols} cols")
+        print(f"Rows with any cell bg matching {args.scan_bg}:")
+        found = False
+        for row_idx, row in enumerate(grid):
+            matching_cols = [ci for ci, (_, _, bg) in enumerate(row) if color_matches(bg, scan_rgb)]
+            if matching_cols:
+                found = True
+                print(f"  row {row_idx:>3}: {len(matching_cols)} matching cols "
+                      f"(cols {matching_cols[0]}..{matching_cols[-1]})")
+        if not found:
+            print("  (none found)")
+        sys.exit(0)
 
     target_rgb = parse_color(args.expect_bg) if args.expect_bg else None
     failures = []
 
+    # ── row-slice mode ────────────────────────────────────────────────────
+    if args.row is not None:
+        if args.row >= total_rows:
+            print(f"FAIL: --row {args.row} out of range (grid has {total_rows} rows)", file=sys.stderr)
+            sys.exit(2)
+        row = grid[args.row]
+        end_col = len(row) - args.skip_right
+        sampled_cols = range(args.skip_cols, end_col)
+
+        if args.verbose:
+            print(f"Grid: {total_rows} rows x {total_cols} cols")
+            print(f"Sampling row {args.row}, cols {args.skip_cols}..{end_col - 1}")
+            print(f"\n{'col':>4}  {'char':>4}  {'fg':>18}  {'bg':>18}")
+
+        for col_idx in sampled_cols:
+            if col_idx < len(row):
+                char, fg, bg = row[col_idx]
+            else:
+                char, fg, bg = (" ", None, None)
+
+            if args.verbose:
+                print(f"{col_idx:>4}  {repr(char):>4}  {color_label(fg):>18}  {color_label(bg):>18}")
+
+            if target_rgb is not None and not color_matches(bg, target_rgb):
+                failures.append((col_idx, char, color_label(bg)))
+
+        if target_rgb is None:
+            sys.exit(0)
+
+        sampled_count = len(sampled_cols)
+        if failures:
+            print(f"FAIL: row {args.row} semantic bg — expected {args.expect_bg}, "
+                  f"{len(failures)}/{sampled_count} cols differ:")
+            for col_idx, char, bg_label in failures[:10]:
+                print(f"  col {col_idx} (char={repr(char)}): bg={bg_label}")
+            if len(failures) > 10:
+                print(f"  ... and {len(failures) - 10} more")
+            sys.exit(1)
+
+        print(f"PASS: row {args.row} semantic bg — all {sampled_count} cols are {args.expect_bg}")
+        sys.exit(0)
+
+    # ── column-slice mode (default) ───────────────────────────────────────
+    col = args.col if args.col is not None else 0
+    end_row = total_rows - args.skip_bottom
+    sampled_rows = range(args.skip_rows, end_row)
+
+    if args.verbose:
+        print(f"Grid: {total_rows} rows x {total_cols} cols")
+        print(f"Sampling column {col}, rows {args.skip_rows}..{end_row - 1}")
+        print(f"\n{'row':>4}  {'char':>4}  {'fg':>18}  {'bg':>18}")
+
     for row_idx in sampled_rows:
         row = grid[row_idx]
-        if args.col < len(row):
-            char, fg, bg = row[args.col]
+        if col < len(row):
+            char, fg, bg = row[col]
         else:
             char, fg, bg = (" ", None, None)
 
-        bg_label = color_label(bg)
-        fg_label = color_label(fg)
-
         if args.verbose:
-            print(f"{row_idx:>4}  {repr(char):>4}  {fg_label:>18}  {bg_label:>18}")
+            print(f"{row_idx:>4}  {repr(char):>4}  {color_label(fg):>18}  {color_label(bg):>18}")
 
         if target_rgb is not None and not color_matches(bg, target_rgb):
-            failures.append((row_idx, char, bg_label))
+            failures.append((row_idx, char, color_label(bg)))
 
     if target_rgb is None:
         sys.exit(0)
 
     sampled_count = len(sampled_rows)
     if failures:
-        print(f"FAIL: column {args.col} semantic bg — expected {args.expect_bg}, "
+        print(f"FAIL: column {col} semantic bg — expected {args.expect_bg}, "
               f"{len(failures)}/{sampled_count} rows differ:")
         for row_idx, char, bg_label in failures[:10]:
             print(f"  row {row_idx} (char={repr(char)}): bg={bg_label}")
@@ -319,7 +382,7 @@ def main():
             print(f"  ... and {len(failures) - 10} more")
         sys.exit(1)
 
-    print(f"PASS: column {args.col} semantic bg — all {sampled_count} rows are {args.expect_bg}")
+    print(f"PASS: column {col} semantic bg — all {sampled_count} rows are {args.expect_bg}")
     sys.exit(0)
 
 
