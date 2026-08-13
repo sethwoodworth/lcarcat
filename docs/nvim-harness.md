@@ -341,6 +341,42 @@ The helpers do **not** launch kitty, take screenshots, or run teardown — those
 
 ---
 
+## 10. Style-B chip rendering in extmarks
+
+Chips span both bar rows (full 2-row height). Per the LCARS design and `zsh/prompt_lcars.zsh _lcars_chips()`:
+
+```
+[1-col black gap] [chip bg full height] [1-col trailing black gap]
+```
+
+Adjacent chips share (comb) a single gap column, so N chips draw N+1 gaps total.
+
+**Rules for correct extmark implementation:**
+
+1. **Gaps must be explicit `virt_text`** with `LcarsBlockBg` (black bg), not a bare column skip.
+   A column skip leaves the `LcarsBlockBar` highlight visible, turning the gap periwinkle instead of black.
+2. Place on **both** `r_top` (blank spaces with chip bg color) and `r_text` (label with chip bg color)
+   to fill the full 2-row bar height.
+3. Use `virt_text_pos = "overlay"` so the chip's highlight group wins over the bar extmark beneath it.
+
+Reference implementation: `nvim/lua/lcars/block_demo.lua chips_block()` and `zsh/prompt_lcars.zsh _lcars_chips()`.
+
+---
+
+## 11. Stub row highlight convention
+
+The elbow image (ELBOW_W=5, ELBOW_H=3) occupies cols `lp` to `lp+4` across all 3 rows including the stub row (header h0+2 or footer f0).
+
+On the stub row, behind the elbow image:
+
+- **Col `lp` only:** paint `LcarsBlockStem` (periwinkle) — matches the image's 1-cell-wide stem (STEM_COLS=1).
+- **Cols `lp+1` to `lp+4`:** leave as `LcarsBlockBg` (black) — the elbow image paints the concave inner fillet arc here; black behind the transparent fillet pixels is correct and lets the fillet show clearly.
+- **Do not** extend `LcarsBlockBar` onto the stub row — bars only cover the 2 bar rows.
+
+The cmd text on the stub row (`mark_at`) must start at `lp + ELBOW_W` (col `lp+5`) to clear the entire fillet region. Starting it earlier covers fillet cols with the `LcarsBlockBg` virt_text background, hiding the fillet.
+
+---
+
 ## Related docs
 
 - `docs/testing.md` — full harness reference, scenario template, pixel tools

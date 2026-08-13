@@ -44,6 +44,7 @@ case "$cmd" in
       --listen-on="$SOCK" \
       --config="$TEST_CONF" \
       --override focus_on_window_creation=false \
+      --start-as=fullscreen \
       --detach
     for i in $(seq 1 20); do
       [ -S "$SOCK_PATH" ] && break
@@ -90,6 +91,8 @@ APPLESCRIPT
     fi
     sleep 0.4
     outfile="$SHOT_DIR/${label}.png"
+    # In fullscreen mode there is no OS chrome — screencapture -l gives us the
+    # terminal content at device pixel resolution, origin (0,0) = cell (0,0).
     screencapture -l"$win_id" -x "$outfile"
     echo "$outfile"
     ;;

@@ -21,6 +21,8 @@ local cache_dir = vim.fn.stdpath("cache") .. "/lcars"
 local LEFT_PAD = 6   -- cols from window left edge to block left edge
 local TOP_PAD  = 2   -- rows from window top  edge to first block row
 
+local DEBUG_BG = false  -- set true (or toggle via :LcarsBlockDemoDebugBg) to reveal transparent image regions
+
 -- ── asset helpers ─────────────────────────────────────────────────────────
 
 local function cell_px()
@@ -67,21 +69,30 @@ local function hcap(dir, cw, ch, facing, w_cells)
          .. cw .. "x" .. ch .. "pixels-gap0.png"
 end
 
+-- 2-row tall round cap spanning both bar rows (no -background000000, no -gap0)
+local CAP_W = 2
+local function vcap(dir, cw, ch, facing)
+  return dir .. "/cap-round-" .. facing .. "-" .. COLOR
+         .. "-" .. CAP_W .. "x2cells-" .. cw .. "x" .. ch .. "pixels.png"
+end
+
 -- ── highlight groups ───────────────────────────────────────────────────────
 
 local function setup_hls()
+  local bg_color = DEBUG_BG and "#330033" or p.bg
   vim.api.nvim_set_hl(0, "LcarsBlockBar",     { bg = p.periwinkle, fg = p.periwinkle })
   vim.api.nvim_set_hl(0, "LcarsBlockStem",    { bg = p.periwinkle, fg = p.periwinkle })
-  vim.api.nvim_set_hl(0, "LcarsBlockBg",      { bg = p.bg,         fg = p.fg })
-  vim.api.nvim_set_hl(0, "LcarsBlockCmd",     { bg = p.bg,         fg = p.fg,  bold = true })
+  vim.api.nvim_set_hl(0, "LcarsBlockBg",      { bg = bg_color,     fg = p.fg })
+  vim.api.nvim_set_hl(0, "LcarsBlockCmd",     { bg = bg_color,     fg = p.fg,  bold = true })
   vim.api.nvim_set_hl(0, "LcarsBlockChipOr",  { bg = p.orange,     fg = p.bg,  bold = true })
   vim.api.nvim_set_hl(0, "LcarsBlockChipGo",  { bg = p.gold,       fg = p.bg })
   vim.api.nvim_set_hl(0, "LcarsBlockChipSk",  { bg = p.sky,        fg = p.bg })
-  vim.api.nvim_set_hl(0, "LcarsBlockLive",    { bg = p.bg,         fg = p.sage, bold = true })
+  vim.api.nvim_set_hl(0, "LcarsBlockLive",    { bg = bg_color,     fg = p.sage, bold = true })
   vim.api.nvim_set_hl(0, "LcarsBlockFold",    { bg = p.bg_dim,     fg = p.orange })
   vim.api.nvim_set_hl(0, "LcarsBlockFoldDim", { bg = p.bg_dim,     fg = p.dim })
-  vim.api.nvim_set_hl(0, "LcarsBlockInput",   { bg = p.bg,         fg = p.fg })
+  vim.api.nvim_set_hl(0, "LcarsBlockInput",   { bg = bg_color,     fg = p.fg })
   vim.api.nvim_set_hl(0, "LcarsBlockCursor",  { bg = p.cursor,     fg = p.bg })
+  vim.api.nvim_set_hl(0, "Normal",            { bg = bg_color,     fg = p.fg })
 end
 
 -- ── image state ────────────────────────────────────────────────────────────
@@ -93,6 +104,22 @@ local function clear_tab_images(tabnr)
     pcall(function() img:clear() end)
   end
   tab_imgs[tabnr] = {}
+end
+
+local function clear_all_images()
+  for t, _ in pairs(tab_imgs) do clear_tab_images(t) end
+  -- Evict orphaned images from a prior module load (tab_imgs handles were lost
+  -- on package.loaded reload). Filtered by cache_dir so we don't touch images
+  -- placed by other plugins.
+  if ok_image then
+    pcall(function()
+      for _, img in ipairs(image.get_images() or {}) do
+        if img.path and img.path:find(cache_dir, 1, true) then
+          img:clear()
+        end
+      end
+    end)
+  end
 end
 
 local function place_image(tabnr, path, x, y, w, h)
@@ -126,22 +153,72 @@ local function bar(w)  return string.rep(" ", w) end
 
 -- ── annotation helpers (called after buf_set_lines) ────────────────────────
 
+-- Priority 200 beats treesitter (100) and default highlights so stem/bar bg
+-- covers content characters that would otherwise inherit Normal bg.
+local HL_PRI = 200
+
 local function hl(buf, group, r, c0, c1)
-  vim.api.nvim_buf_add_highlight(buf, ns, group, r, c0, c1)
+  vim.api.nvim_buf_set_extmark(buf, ns, r, c0, {
+    end_col   = c1,
+    hl_group  = group,
+    priority  = HL_PRI,
+    strict    = false,   -- clamp instead of error when end_col > line length
+  })
 end
 
 local function barrow(buf, r, x0, w, group)
   hl(buf, group, r, x0, x0 + w)
 end
 
+-- Stem is 1 cell wide: the elbow image's stem segment is STEM_COLS=1 in gen_swoops.py.
+local STEM_W = 1
+
+-- Right-end cap width in cells (hcap-round-left/right-...-1x1cells-...)
+local HCAP_W = 1
+
 local function stem_left_rows(buf, r0, r1, x)
-  for r = r0, r1 - 1 do hl(buf, "LcarsBlockStem", r, x, x + 1) end
+  for r = r0, r1 - 1 do hl(buf, "LcarsBlockStem", r, x, x + STEM_W) end
 end
 
 local function stem_right_rows(buf, r0, r1, x)
-  for r = r0, r1 - 1 do hl(buf, "LcarsBlockStem", r, x, x + 1) end
+  for r = r0, r1 - 1 do hl(buf, "LcarsBlockStem", r, x - STEM_W + 1, x + 1) end
 end
 
+-- Place chips spanning two rows (r_top = bar row 0, r_text = bar row 1).
+-- Each chip: 1-col black gap | colored bg full height | 1-col trailing black gap.
+-- Adjacent chips share (comb) a single gap column per the zsh _lcars_chips rule.
+local function chips_block(buf, r_top, r_text, col, chip_list)
+  local function gap_at(row, pos)
+    vim.api.nvim_buf_set_extmark(buf, ns, row, 0, {
+      virt_text         = {{ " ", "LcarsBlockBg" }},
+      virt_text_pos     = "overlay",
+      virt_text_win_col = pos,
+    })
+  end
+  -- leading gap before first chip
+  gap_at(r_top, col); gap_at(r_text, col)
+  local c = col + 1
+  for _, chip in ipairs(chip_list) do
+    local label = " " .. chip[1] .. " "
+    local blank = string.rep(" ", #label)
+    vim.api.nvim_buf_set_extmark(buf, ns, r_top, 0, {
+      virt_text         = {{ blank, chip[2] }},
+      virt_text_pos     = "overlay",
+      virt_text_win_col = c,
+    })
+    vim.api.nvim_buf_set_extmark(buf, ns, r_text, 0, {
+      virt_text         = {{ label, chip[2] }},
+      virt_text_pos     = "overlay",
+      virt_text_win_col = c,
+    })
+    c = c + #label
+    -- trailing gap (combs with next chip's leading gap)
+    gap_at(r_top, c); gap_at(r_text, c)
+    c = c + 1
+  end
+end
+
+-- Single-row chip placement (used by make_A2/B/C/D/F/G where chips sit on one row).
 local function chips_at(buf, r, col, chip_list)
   local c = col
   for _, chip in ipairs(chip_list) do
@@ -230,21 +307,29 @@ local function make_A(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   })
   append(lines, { "" })
 
+  -- bar_x0 overlaps the elbow by 1 col to close the antialiased-edge gap
+  local bar_x0 = lp + ELBOW_W - 1
+  local cap_x  = lp + bw - CAP_W
+  local bar_w  = cap_x - bar_x0  -- bar fills from bar_x0 up to (not including) cap
+
   local function annotate(buf)
-    barrow(buf, h0,     lp, bw, "LcarsBlockBar")
-    barrow(buf, h0 + 1, lp, bw, "LcarsBlockBar")
-    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + 1)
-    chips_at(buf, h0 + 1, lp + ELBOW_W + 1, chips)
-    mark_at(buf, h0 + 2, lp + 1, cmd, "LcarsBlockBg")
+    barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + STEM_W)
+    chips_block(buf, h0, h0 + 1, bar_x0, chips)
+    -- cmd starts past the full elbow width so the inner fillet is not covered
+    mark_at(buf, h0 + 2, lp + ELBOW_W, cmd, "LcarsBlockBg")
     stem_left_rows(buf, o0, o0 + #out, lp)
-    hl(buf, "LcarsBlockStem", f0,     lp, lp + 1)
-    barrow(buf, f0 + 1, lp, bw, "LcarsBlockBar")
-    barrow(buf, f0 + 2, lp, bw, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", f0,     lp, lp + STEM_W)
+    barrow(buf, f0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, f0 + 2, bar_x0, bar_w, "LcarsBlockBar")
   end
 
   return annotate, {
-    { path = elbow(dir,cw,ch,"top",   "left"), dx=lp, dy=h0, w=ELBOW_W, h=ELBOW_H },
-    { path = elbow(dir,cw,ch,"bottom","left"), dx=lp, dy=f0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"top",   "left"), dx=lp,   dy=h0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"bottom","left"), dx=lp,   dy=f0, w=ELBOW_W, h=ELBOW_H },
+    { path = vcap(dir,cw,ch,"right"), dx=cap_x, dy=h0,     w=CAP_W, h=2 },
+    { path = vcap(dir,cw,ch,"right"), dx=cap_x, dy=f0 + 1, w=CAP_W, h=2 },
   }
 end
 
@@ -268,20 +353,26 @@ local function make_A2(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   })
   append(lines, { "" })
 
+  local bar_x0 = lp + CORNER_W
+  local bar_w  = bw - CORNER_W - HCAP_W
+  local cap_x  = lp + bw - HCAP_W
+
   local function annotate(buf)
-    barrow(buf, h0,     lp, bw, "LcarsBlockBar")
-    barrow(buf, h0 + 1, lp, bw, "LcarsBlockBar")
-    hl(buf, "LcarsBlockStem", h0 + 1, lp, lp + 1)
+    barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", h0 + 1, lp, lp + STEM_W)
     chips_at(buf, h0, lp + CORNER_W + 1, chips)
     mark_at(buf, h0 + 1, lp + 1, cmd, "LcarsBlockBg")
     stem_left_rows(buf, o0, o0 + #out, lp)
-    hl(buf, "LcarsBlockStem", f0,     lp, lp + 1)
-    barrow(buf, f0 + 1, lp, bw, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", f0,     lp, lp + STEM_W)
+    barrow(buf, f0 + 1, bar_x0, bar_w, "LcarsBlockBar")
   end
 
   return annotate, {
-    { path = corner(dir,cw,ch,"top"),    dx=lp, dy=h0, w=CORNER_W, h=CORNER_H },
-    { path = corner(dir,cw,ch,"bottom"), dx=lp, dy=f0, w=CORNER_W, h=CORNER_H },
+    { path = corner(dir,cw,ch,"top"),     dx=lp,   dy=h0,     w=CORNER_W, h=CORNER_H },
+    { path = corner(dir,cw,ch,"bottom"),  dx=lp,   dy=f0,     w=CORNER_W, h=CORNER_H },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=h0,     w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=f0 + 1, w=HCAP_W, h=1 },
   }
 end
 
@@ -307,23 +398,30 @@ local function make_B(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   })
   append(lines, { "" })
 
-  local rx = lp + bw - 1  -- right stem col
+  local rx     = lp + bw - 1          -- right stem col (rightmost cell)
+  local elbow_x = lp + bw - ELBOW_W   -- right elbow starts here
+  local bar_x0  = lp + HCAP_W         -- bar starts after left cap
+  local bar_w   = bw - HCAP_W - ELBOW_W  -- bar ends before right elbow
 
   local function annotate(buf)
-    barrow(buf, h0,     lp, bw, "LcarsBlockBar")
-    barrow(buf, h0 + 1, lp, bw, "LcarsBlockBar")
-    hl(buf, "LcarsBlockStem", h0 + 2, rx, rx + 1)
-    chips_at(buf, h0 + 1, lp + 2, chips)
-    mark_at(buf, h0 + 2, lp + 1, cmd, "LcarsBlockBg")
+    barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", h0 + 2, rx - STEM_W + 1, rx + 1)
+    chips_at(buf, h0 + 1, lp + HCAP_W + 2, chips)
+    mark_at(buf, h0 + 2, lp + HCAP_W + 1, cmd, "LcarsBlockBg")
     stem_right_rows(buf, o0, o0 + #out, rx)
-    hl(buf, "LcarsBlockStem", f0,     rx, rx + 1)
-    barrow(buf, f0 + 1, lp, bw, "LcarsBlockBar")
-    barrow(buf, f0 + 2, lp, bw, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", f0,     rx - STEM_W + 1, rx + 1)
+    barrow(buf, f0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, f0 + 2, bar_x0, bar_w, "LcarsBlockBar")
   end
 
   return annotate, {
-    { path = elbow(dir,cw,ch,"top",   "right"), dx=lp+bw-ELBOW_W, dy=h0, w=ELBOW_W, h=ELBOW_H },
-    { path = elbow(dir,cw,ch,"bottom","right"), dx=lp+bw-ELBOW_W, dy=f0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"top",   "right"), dx=elbow_x, dy=h0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"bottom","right"), dx=elbow_x, dy=f0, w=ELBOW_W, h=ELBOW_H },
+    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=h0,     w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=h0 + 1, w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=f0 + 1, w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=f0 + 2, w=HCAP_W, h=1 },
   }
 end
 
@@ -352,21 +450,29 @@ local function make_C(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   for _, ch_ in ipairs(chips) do chip_w = chip_w + #ch_[1] + 2 end
   local notch_col = lp + ELBOW_W + 1 + chip_w + 1
 
+  local bar_x0 = lp + ELBOW_W
+  local bar_w  = bw - ELBOW_W - HCAP_W
+  local cap_x  = lp + bw - HCAP_W
+
   local function annotate(buf)
-    barrow(buf, h0,     lp, bw, "LcarsBlockBar")
-    barrow(buf, h0 + 1, lp, bw, "LcarsBlockBar")
-    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + 1)
+    barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + STEM_W)
     chips_at(buf, h0 + 1, lp + ELBOW_W + 1, chips)
     mark_at(buf, h0 + 1, notch_col, " " .. cmd .. " ", "LcarsBlockCmd")
     stem_left_rows(buf, o0, o0 + #out, lp)
-    hl(buf, "LcarsBlockStem", f0,     lp, lp + 1)
-    barrow(buf, f0 + 1, lp, bw, "LcarsBlockBar")
-    barrow(buf, f0 + 2, lp, bw, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", f0,     lp, lp + STEM_W)
+    barrow(buf, f0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, f0 + 2, bar_x0, bar_w, "LcarsBlockBar")
   end
 
   return annotate, {
-    { path = elbow(dir,cw,ch,"top",   "left"), dx=lp, dy=h0, w=ELBOW_W, h=ELBOW_H },
-    { path = elbow(dir,cw,ch,"bottom","left"), dx=lp, dy=f0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"top",   "left"), dx=lp,   dy=h0,     w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"bottom","left"), dx=lp,   dy=f0,     w=ELBOW_W, h=ELBOW_H },
+    { path = hcap(dir,cw,ch,"right",  HCAP_W), dx=cap_x, dy=h0,     w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"right",  HCAP_W), dx=cap_x, dy=h0 + 1, w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"right",  HCAP_W), dx=cap_x, dy=f0 + 1, w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"right",  HCAP_W), dx=cap_x, dy=f0 + 2, w=HCAP_W, h=1 },
   }
 end
 
@@ -385,19 +491,26 @@ local function make_D(lines, lp, bw, dir, cw, ch, cmd, content)
   local o0 = append(lines, out)
   append(lines, { "" })
 
+  local bar_x0 = lp + ELBOW_W
+  local bar_w  = bw - ELBOW_W - HCAP_W
+  local cap_x  = lp + bw - HCAP_W
+
   local function annotate(buf)
-    barrow(buf, h0,     lp, bw, "LcarsBlockBar")
-    barrow(buf, h0 + 1, lp, bw, "LcarsBlockBar")
-    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + 1)
+    barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + STEM_W)
     chips_at(buf, h0 + 1, lp + ELBOW_W + 1, CHIPS)
     mark_at(buf, h0 + 2, lp + 1, cmd, "LcarsBlockBg")
     stem_left_rows(buf, o0, o0 + #out, lp)
     local last_text = out[#out]
-    hl(buf, "LcarsBlockLive", o0 + #out - 1, lp + #last_text - 1, lp + #last_text + 2)
+    local cursor_col = #last_text - 2
+    hl(buf, "LcarsBlockLive", o0 + #out - 1, cursor_col, cursor_col + 3)
   end
 
   return annotate, {
-    { path = elbow(dir,cw,ch,"top","left"), dx=lp, dy=h0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"top","left"), dx=lp,   dy=h0,     w=ELBOW_W, h=ELBOW_H },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=h0,     w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=h0 + 1, w=HCAP_W, h=1 },
   }
 end
 
@@ -442,18 +555,24 @@ local function make_F(lines, lp, bw, dir, cw, ch)
   })
   append(lines, { "" })
 
+  local bar_x0 = lp + ELBOW_W
+  local bar_w  = bw - ELBOW_W - HCAP_W
+  local cap_x  = lp + bw - HCAP_W
+
   local function annotate(buf)
     for r = s0, s0 + #scroll - 1 do hl(buf, "LcarsBlockFoldDim", r, lp, lp + bw) end
-    barrow(buf, h0,     lp, bw, "LcarsBlockBar")
-    barrow(buf, h0 + 1, lp, bw, "LcarsBlockBar")
+    barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
     chips_at(buf, h0 + 1, lp + ELBOW_W + 1, CHIPS)
     hl(buf, "LcarsBlockInput", h0 + 2, lp, lp + bw)
-    hl(buf, "LcarsBlockStem",  h0 + 2, lp, lp + 1)
+    hl(buf, "LcarsBlockStem",  h0 + 2, lp, lp + STEM_W)
     mark_at(buf, h0 + 2, lp + 1, "█", "LcarsBlockCursor")
   end
 
   return annotate, {
-    { path = elbow(dir,cw,ch,"top","left"), dx=lp, dy=h0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"top","left"), dx=lp,   dy=h0,     w=ELBOW_W, h=ELBOW_H },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=h0,     w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=h0 + 1, w=HCAP_W, h=1 },
   }
 end
 
@@ -467,16 +586,22 @@ local function make_G(lines, lp, bw, dir, cw, ch)
   })
   append(lines, { "" })
 
+  local bar_x0 = lp + ELBOW_W
+  local bar_w  = bw - ELBOW_W - HCAP_W
+  local cap_x  = lp + bw - HCAP_W
+
   local function annotate(buf)
-    barrow(buf, h0,     lp, bw, "LcarsBlockBar")
-    barrow(buf, h0 + 1, lp, bw, "LcarsBlockBar")
-    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + 1)
+    barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
+    barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
+    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + STEM_W)
     chips_at(buf, h0 + 1, lp + ELBOW_W + 1, CHIPS)
     mark_at(buf, h0 + 2, lp + 1, "█", "LcarsBlockCursor")
   end
 
   return annotate, {
-    { path = elbow(dir,cw,ch,"top","left"), dx=lp, dy=h0, w=ELBOW_W, h=ELBOW_H },
+    { path = elbow(dir,cw,ch,"top","left"), dx=lp,   dy=h0,     w=ELBOW_W, h=ELBOW_H },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=h0,     w=HCAP_W, h=1 },
+    { path = hcap(dir,cw,ch,"right", HCAP_W), dx=cap_x, dy=h0 + 1, w=HCAP_W, h=1 },
   }
 end
 
@@ -513,6 +638,7 @@ local function setup_win(win)
   vim.wo[win].foldcolumn     = "0"
   vim.wo[win].wrap           = false
   vim.wo[win].cursorline     = false
+  vim.wo[win].list           = false
   vim.wo[win].winhighlight   = "Normal:LcarsBlockBg,NormalNC:LcarsBlockBg"
 end
 
@@ -559,21 +685,14 @@ local function render_tab(name, build_fn)
   -- ── Phase 3: annotations ───────────────────────────────────────────────
   for _, annot in ipairs(all_annots) do annot(buf) end
 
-  -- ── Phase 4: images ────────────────────────────────────────────────────
-  local wi       = vim.fn.getwininfo(win)[1]
-  local win_top  = wi.winrow - 1
-  local win_col  = wi.wincol - 1
-  local topline  = vim.fn.line("w0", win) - 1
-
-  for _, spec in ipairs(all_specs) do
-    local sy = win_top + spec.dy - topline
-    local sx = win_col + spec.dx
-    if sy >= win_top and sy < win_top + wi.height then
-      place_image(tabnr, spec.path, sx, sy, spec.w, spec.h)
-    end
-  end
-
   vim.api.nvim_win_set_cursor(win, { 1, 0 })
+
+  -- Return the tabpage handle, specs, and win so the caller can place images.
+  local tp = nil
+  for _, t in ipairs(vim.api.nvim_list_tabpages()) do
+    if vim.api.nvim_tabpage_get_number(t) == tabnr then tp = t; break end
+  end
+  return all_specs, win, tp, tabnr
 end
 
 -- ── tab definitions ────────────────────────────────────────────────────────
@@ -682,21 +801,47 @@ local TABS = {
   end},
 }
 
+-- Place images for the given tab's win/specs at current screen coords.
+-- Must be called when `tabnr` is the active (visible) tab.
+-- Clears ALL tracked images first — kitty images are screen-absolute and
+-- persist across nvim tab switches, so we must evict every other tab's images.
+local function render_images_for_tab(tabnr, win, specs)
+  clear_all_images()
+  local wi      = vim.fn.getwininfo(win)[1]
+  local win_top = wi.winrow - 1
+  local win_col = wi.wincol - 1
+  local topline = vim.fn.line("w0", win) - 1
+  for _, spec in ipairs(specs) do
+    local sy = win_top + spec.dy - topline
+    local sx = win_col + spec.dx
+    if sy >= win_top and sy < win_top + wi.height then
+      place_image(tabnr, spec.path, sx, sy, spec.w, spec.h)
+    end
+  end
+end
+
 -- ── public API ─────────────────────────────────────────────────────────────
 
 function M.render_all()
+  -- Phase 1: render all tab buffers (text + highlights only, no images).
+  -- render_tab may create tabs via tabnew (switching active tab); that's OK
+  -- since we defer all image placement to phase 3.
+  local tab_specs = {}  -- { tp, tabnr, win, specs }
   for _, t in ipairs(TABS) do
-    render_tab(t.name, t.fn)
+    local specs, win, tp, tabnr = render_tab(t.name, t.fn)
+    tab_specs[#tab_specs + 1] = { tp = tp, tabnr = tabnr, win = win, specs = specs }
   end
-  -- Go back to first demo tab
-  for _, tp in ipairs(vim.api.nvim_list_tabpages()) do
-    local wins = vim.api.nvim_tabpage_list_wins(tp)
-    if #wins > 0 then
-      local b = vim.api.nvim_win_get_buf(wins[1])
-      if vim.api.nvim_buf_get_name(b):find("demo/A-", 1, true) then
-        vim.api.nvim_set_current_tabpage(tp)
-        break
-      end
+
+  -- Phase 2: clear every kitty image (stale from prior renders).
+  clear_all_images()
+
+  -- Phase 3: navigate to tab A and place only its images.
+  for _, ts in ipairs(tab_specs) do
+    local b = vim.api.nvim_win_get_buf(ts.win)
+    if vim.api.nvim_buf_get_name(b):find("demo/A-", 1, true) then
+      vim.api.nvim_set_current_tabpage(ts.tp)
+      render_images_for_tab(ts.tabnr, ts.win, ts.specs)
+      break
     end
   end
 end
@@ -704,7 +849,11 @@ end
 function M.render_one(name)
   for _, t in ipairs(TABS) do
     if t.name == name or t.name:sub(1,1) == name then
-      render_tab(t.name, t.fn)
+      local specs, win, tp, tabnr = render_tab(t.name, t.fn)
+      if tp then
+        vim.api.nvim_set_current_tabpage(tp)
+        render_images_for_tab(tabnr, win, specs)
+      end
       return
     end
   end
@@ -719,6 +868,12 @@ vim.api.nvim_create_user_command("LcarsBlockDemoOne", function(opts)
   M.render_one(opts.args)
 end, { nargs = 1, desc = "Open a single LCARS block demo tab (A-G)" })
 
+vim.api.nvim_create_user_command("LcarsBlockDemoDebugBg", function()
+  DEBUG_BG = not DEBUG_BG
+  setup_hls()
+  M.render_all()
+end, { desc = "Toggle debug bg (#330033) to reveal transparent image regions" })
+
 -- Re-render images when entering a demo tab (images are viewport-fixed;
 -- they need to be redrawn at current screen coordinates on tab switch).
 vim.api.nvim_create_autocmd("TabEnter", {
@@ -728,11 +883,14 @@ vim.api.nvim_create_autocmd("TabEnter", {
     if #wins == 0 then return end
     local bufname = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(wins[1]))
     if not bufname:find("lcars://demo/", 1, true) then return end
-    -- Find which tab definition matches and re-render images only.
+    -- Find which tab definition matches and re-render images for the now-active tab.
     local demo_name = bufname:match("lcars://demo/(.+)$")
     for _, t in ipairs(TABS) do
       if t.name == demo_name then
-        vim.schedule(function() render_tab(t.name, t.fn) end)
+        vim.schedule(function()
+          local specs, win, tp, tabnr = render_tab(t.name, t.fn)
+          if tp then render_images_for_tab(tabnr, win, specs) end
+        end)
         return
       end
     end

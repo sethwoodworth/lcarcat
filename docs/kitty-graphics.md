@@ -4,6 +4,30 @@ Technical reference for the LCARS chrome that uses the kitty graphics protocol �
 
 ---
 
+## Z-order: images vs. terminal cells
+
+Kitty renders placed images **above** terminal cells in the compositor:
+
+1. nvim renders all cells (SGR background colors, highlight groups, extmark virt_text) to the terminal layer.
+2. Kitty images are composited on top. Opaque image pixels cover the cell content; transparent pixels reveal the cell bg/fg beneath them.
+
+There is no `z_index` parameter for windowless image.nvim placements. Render order is strictly:
+**cells (including all extmarks and virt_text) → placed images.**
+
+**Practical consequences for LCARS block frames:**
+
+- To show the bar color through a transparent image corner or fillet, paint that cell with the
+  bar highlight group — the image's transparent pixels will reveal it.
+- To show black through transparent pixels, leave the cell at `Normal` / `LcarsBlockBg` (black bg).
+- `virt_text` overlays and `hl_group` extmarks are both below the image layer. If an image is
+  placed at a column, its opaque pixels win regardless of extmark priority.
+- The inner fillet arc is transparent in the elbow PNG. If the cells behind the fillet area
+  have no bar highlight, the fillet will look correct against a black background. If a bar
+  highlight extends into the fillet columns, the periwinkle bar color bleeds through the
+  partial-alpha fillet pixels — which may be intentional (it matches the bar color).
+
+---
+
 ## The central rule: pixel dimensions must match exactly
 
 When kitty renders a Unicode-placeholder (`U=1`) image, it **aspect-fits** the source PNG into the cell box `cols * cell.width × rows * cell.height`. If the two aspect ratios differ, kitty centers on the constraining axis and stores a sub-cell offset (`cell_x_offset` or `cell_y_offset`). The final layer position is:

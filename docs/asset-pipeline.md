@@ -39,6 +39,28 @@ uv run --with pillow generate/gen_swoops.py [options]
 
 ---
 
+## Elbow stem geometry invariants
+
+- `STEM_COLS = 1` is fixed for all `elbow` and `swoop` assets. The `--stem-cols` flag only
+  applies to `corner` assets. This invariant is not exposed as a parameter — legacy elbows
+  always have a 1-cell-wide stem.
+
+- The inner fillet arc occupies approximately image cols `1` to `ELBOW_W - 1` at the stub row
+  (image row 2 for top elbows; row 0 for bottom elbows). For the default 5×3-cell elbow,
+  the fillet is visible at cols 1–3 from the image's left edge. Fillet radius in the Python source:
+  `r_in = min(stemW * 0.9, ch * 0.6)` device px — approximately 17 px at 19×38 px/cell.
+
+- **The 1-col bar overlap rule:** start the `LcarsBlockBar` highlight 1 col *inside* the elbow
+  (`bar_x0 = lp + ELBOW_W - 1`) to close the 1-px antialiased-edge gap visible at the bar/image
+  seam. The overlapping col is covered by solid bar pixels in the image; visually seamless.
+
+- **Bar highlight must extend under the cap:** use `bar_w = (lp + bw) - bar_x0` rather than
+  stopping at `cap_x`. The 2×2 cap image has transparent outer corners; if the cells behind them
+  are black (not bar-colored), the corners appear as sharp black right-angles instead of a smooth
+  round end. Painting periwinkle under the full cap area lets the transparent pixels blend correctly.
+
+---
+
 ## Filename format (`asset_name()`)
 
 Every PNG is named for the inputs that change its rendered shape, so distinct variants coexist instead of overwriting one fixed name:

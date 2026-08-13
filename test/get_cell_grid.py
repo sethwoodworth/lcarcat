@@ -258,6 +258,13 @@ def main():
     ap.add_argument("--expect-bg",   default=None,  help="Assert this bg color in all sampled cells")
     ap.add_argument("--scan-bg",     default=None,  help="Print every row where ANY cell in the row matches this bg (diagnostic, no assertion)")
     ap.add_argument("--verbose",     action="store_true")
+    # Dump-grid mode: print full annotated cell map and exit
+    ap.add_argument("--dump-grid",   action="store_true", help="Print full annotated cell map and exit")
+    ap.add_argument("--rows-from",   type=int, default=None, help="First row to include in dump (0-indexed, default: 0)")
+    ap.add_argument("--rows-to",     type=int, default=None, help="Last row (exclusive) to include in dump (default: all)")
+    ap.add_argument("--cols-from",   type=int, default=None, help="First col to include in dump (0-indexed, default: 0)")
+    ap.add_argument("--cols-to",     type=int, default=None, help="Last col (exclusive) to include in dump (default: all)")
+    ap.add_argument("--format",      choices=["table", "csv"], default="table", help="Dump format: table (default) or csv")
     args = ap.parse_args()
 
     cmd = ["kitty", "@", "--to", args.socket, "get-text", "--ansi", "--extent", "screen"]
@@ -284,6 +291,54 @@ def main():
     if total_rows == 0:
         print("FAIL: empty grid returned", file=sys.stderr)
         sys.exit(2)
+
+    # ── dump-grid mode: full annotated cell map ───────────────────────────
+    if args.dump_grid:
+        r0 = args.rows_from if args.rows_from is not None else 0
+        r1 = args.rows_to   if args.rows_to   is not None else total_rows
+        c0 = args.cols_from if args.cols_from is not None else 0
+        c1 = args.cols_to   if args.cols_to   is not None else total_cols
+        r0 = max(0, r0); r1 = min(total_rows, r1)
+        c0 = max(0, c0); c1 = min(total_cols, c1)
+
+        TABLE_CODES = {
+            "periwinkle": "P ", "stem": "P ",
+            "orange":     "O ",
+            "black":      "B ",
+            "sky":        "S ", "sky-blue": "S ",
+            "gold":       "G ",
+            "sage":       "Sg",
+            "red":        "R ",
+            "lilac":      "L ",
+            "stem-dim":   "Sd",
+            "default":    ". ",
+        }
+
+        if args.format == "csv":
+            print("row,col,char,fg_label,bg_label")
+            for ri in range(r0, r1):
+                row = grid[ri]
+                for ci in range(c0, c1):
+                    if ci < len(row):
+                        ch, fg, bg = row[ci]
+                    else:
+                        ch, fg, bg = (" ", None, None)
+                    safe_ch = ch.replace('"', '""')
+                    print(f'{ri},{ci},"{safe_ch}",{color_label(fg)},{color_label(bg)}')
+        else:
+            print(f"Grid: {total_rows} rows x {total_cols} cols  (showing rows {r0}..{r1-1}, cols {c0}..{c1-1})")
+            for ri in range(r0, r1):
+                row = grid[ri]
+                cells = []
+                for ci in range(c0, c1):
+                    if ci < len(row):
+                        _, _, bg = row[ci]
+                    else:
+                        bg = None
+                    label = color_label(bg)
+                    cells.append(TABLE_CODES.get(label, "? "))
+                print(f"R{ri:03d}: {''.join(cells)}")
+        sys.exit(0)
 
     # ── scan-bg mode: find rows containing a given bg color ──────────────
     if args.scan_bg is not None:

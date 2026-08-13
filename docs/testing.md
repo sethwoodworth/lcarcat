@@ -12,6 +12,7 @@ lcarcat has no unit tests. All testing is visual/screenshot-based. This document
 | Did the gutter render as periwinkle on screen? | `analyze_gutter_cells.py --expect-bg periwinkle` |
 | Is the elbow image flush with the stem bg cell? | `analyze_left_edge.py` |
 | Where is a color in the PNG, exactly? | `analyze_left_edge.py` (raw row scan) |
+| Which cell column/row does a rendered element occupy? | `overlay_grid.py` — annotate screenshot with cell boundary grid |
 | Something renders wrong but cells look right | rendering bug — check CSI 16t / font size |
 | Cells have the wrong color but nvim config looks right | logic bug — check highlight groups in `nvim/colors/lcars.lua` |
 
@@ -58,9 +59,14 @@ Drives a detached kitty instance via `kitty @ --to SOCK` remote control. Capture
 
 Use stable `id:N` window addressing rather than `recent:N`. The `recent:N` index shifts when windows are opened or closed, causing commands to target the wrong window. Get window IDs once via `kitty @ ls` and reuse them throughout a scenario.
 
-### Retina capture
+### Fullscreen capture and pixel coordinates
 
-`screencapture -l` captures at 2x on Retina displays — 1 logical point = 2 device pixels in the output PNG. The pixel tools use `--scale 2` to account for this.
+The test kitty launches fullscreen (`--start-as=fullscreen`) with `window_padding_width 0` and `placement_strategy top-left`. This means:
+
+- Cell (0,0) is at pixel (0,0) in every screenshot — no macOS title bar, no partial-cell leading gap.
+- `screencapture -l` on Retina returns device pixels. At the standard test font (Fantasque Sans Mono 18pt), each cell is 19×38 device px.
+- Any remainder pixels from display-size ÷ cell-size land at the right and bottom edges, not the top-left.
+- Pass screenshots directly to `overlay_grid.py` with `--term-left 0 --term-top 0` (the defaults).
 
 ---
 
@@ -167,6 +173,53 @@ For a scenario with multiple panes, parse by `is_self`, `is_focused`, or positio
 - When kitty is no longer running (snapshot-only workflows). The tool needs a live socket.
 - When testing zsh prompt colors. The prompt outputs raw escape sequences and the cells may change on the next prompt redraw. Capture a snapshot instead, then use `analyze_gutter_cells.py`.
 - When the cell content is a kitty graphics placeholder (U+10EEEE). The `get-text` output for those cells is the raw placeholder codepoint with the image-id foreground color, not the visible rendered color.
+
+---
+
+### test/overlay_grid.py
+
+**What it answers:** "Which cell column and row does this rendered element occupy?"
+
+Annotates a screenshot PNG with semi-transparent cyan grid lines at every cell boundary, labelling every Nth column and row with its index. Creates a shared coordinate vocabulary between user and agent — feedback like "the cap arc starts at col 7, one cell too late" becomes unambiguous.
+
+```
+overlay_grid.py <input.png> <output.png>
+    [--cellw 19]              device px per cell width  (default: 19)
+    [--cellh 38]              device px per cell height (default: 38)
+    [--term-left 0]           x of col 0 left edge (default: 0)
+    [--term-top 0]            y of row 0 top edge (default: 0)
+    [--label-every-n-cols 5]  label every Nth column  (default: 5)
+    [--label-every-n-rows 3]  label every Nth row     (default: 3)
+```
+
+**Calibrated values for `test/kitty_test.conf`** (fullscreen, `placement_strategy top-left`, `window_padding_width 0`):
+
+```bash
+python3 test/overlay_grid.py input.png output.png \
+  --term-left 0 --term-top 0 --cellw 19 --cellh 38
+```
+
+All defaults are set to these values. With fullscreen launch and `placement_strategy top-left`, cell (0,0) is always at pixel (0,0) — no partial-cell leading gap. The screenshot harness (`screenshot_harness.sh launch`) uses `--start-as=fullscreen` to ensure this.
+
+**Cell dimensions are font-specific.** The defaults (19×38 device px) are calibrated for Fantasque Sans Mono at `font_size 18`. If the font family or size changes, recalibrate via CSI 16t (`ESC[16t` → reply `ESC[6;<height>;<width>t`) or use the `--socket` flag (tracked in `lcarcat-1la`). Pass `--cellw`/`--cellh` explicitly when running outside the test harness or after a font change.
+
+**When to use:**
+- When debugging geometry issues: which cell does the LCARS elbow image start at? Does the periwinkle bar span the expected columns?
+- When reporting or diagnosing issues with LCARS block frame rendering — add a grid overlay to the screenshot before filing a bead so cell positions are unambiguous.
+- After any image placement or highlight group change, overlay the grid on the before/after screenshots to confirm the change landed at the right cell.
+
+**When not to use:**
+- For programmatic pass/fail assertions — `get_cell_grid.py --expect-bg` is the right tool.
+- When you need rendered pixel colors — `analyze_gutter_cells.py` samples the actual screenshot pixels.
+
+**Screenshot harness integration:** The `snapshot` subcommand in `screenshot_harness.sh` captures at device pixel resolution with no OS chrome (fullscreen mode). Pass the captured PNG directly to `overlay_grid.py` — no scale factor needed.
+
+```bash
+./test/screenshot_harness.sh snapshot my-tab
+python3 test/overlay_grid.py \
+  "$SHOT_DIR/my-tab.png" \
+  "$SHOT_DIR/my-tab-grid.png"
+```
 
 ---
 
