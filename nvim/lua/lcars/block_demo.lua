@@ -157,9 +157,15 @@ local function bar(w)  return string.rep(" ", w) end
 -- covers content characters that would otherwise inherit Normal bg.
 local HL_PRI = 200
 
+-- The global statuscolumn ("%#LineNr#%=%l%#LineNr# ") in nvim/colors/lcars.lua
+-- always renders one gutter cell before content col 0 (textoff = 1). Images use
+-- raw screen coords; extmarks use buffer coords. Subtracting GUTTER_W once, here,
+-- lands every extmark at the same screen column as the image col it should cover.
+local GUTTER_W = 1
+
 local function hl(buf, group, r, c0, c1)
-  vim.api.nvim_buf_set_extmark(buf, ns, r, c0, {
-    end_col   = c1,
+  vim.api.nvim_buf_set_extmark(buf, ns, r, c0 - GUTTER_W, {
+    end_col   = c1 - GUTTER_W,
     hl_group  = group,
     priority  = HL_PRI,
     strict    = false,   -- clamp instead of error when end_col > line length
@@ -310,17 +316,19 @@ local function make_A(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   -- bar_x0 overlaps the elbow by 1 col to close the antialiased-edge gap
   local bar_x0 = lp + ELBOW_W - 1
   local cap_x  = lp + bw - CAP_W
-  local bar_w  = cap_x - bar_x0  -- bar fills from bar_x0 up to (not including) cap
+  -- Bar stops BEFORE the 2-cell vcap. The bar extmark at HL_PRI=200 renders above
+  -- the image in nvim+image.nvim+kitty, so any cap cell it covers becomes a solid
+  -- rectangle (arc lost). Leaving both cap cells with the default black bg lets the
+  -- vcap image's full 2-cell semicircle show — periwinkle interior curving to
+  -- transparent outer corners over black.
+  local bar_w  = cap_x - bar_x0
 
   local function annotate(buf)
     barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
     barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
-    hl(buf, "LcarsBlockStem", h0 + 2, lp, lp + STEM_W)
     chips_block(buf, h0, h0 + 1, bar_x0, chips)
-    -- cmd starts past the full elbow width so the inner fillet is not covered
     mark_at(buf, h0 + 2, lp + ELBOW_W, cmd, "LcarsBlockBg")
     stem_left_rows(buf, o0, o0 + #out, lp)
-    hl(buf, "LcarsBlockStem", f0,     lp, lp + STEM_W)
     barrow(buf, f0 + 1, bar_x0, bar_w, "LcarsBlockBar")
     barrow(buf, f0 + 2, bar_x0, bar_w, "LcarsBlockBar")
   end
@@ -683,6 +691,10 @@ local function render_tab(name, build_fn)
   vim.bo[buf].modifiable = false
 
   -- ── Phase 3: annotations ───────────────────────────────────────────────
+  -- hl() subtracts GUTTER_W to compensate for the global statuscolumn (1 col
+  -- gutter, textoff=1) between screen col 0 and buffer col 0. No dynamic
+  -- textoff read is needed: statuscolumn is set once in nvim/colors/lcars.lua
+  -- and doesn't vary per window.
   for _, annot in ipairs(all_annots) do annot(buf) end
 
   vim.api.nvim_win_set_cursor(win, { 1, 0 })

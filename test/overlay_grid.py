@@ -32,7 +32,7 @@ def main():
     ap.add_argument("--cellw",              type=int, default=19,  help="Device px per cell width (default: 19)")
     ap.add_argument("--cellh",              type=int, default=38,  help="Device px per cell height (default: 38)")
     ap.add_argument("--term-left",          type=int, default=0,   help="X of col 0 left edge in device px (default: 0)")
-    ap.add_argument("--term-top",           type=int, default=108, help="Y of row 0 top edge in device px (default: 108 = macOS title bar only; use 162 when kitty tab bar is also visible)")
+    ap.add_argument("--term-top",           type=int, default=0,   help="Y of row 0 top edge in device px (default: 0 = fullscreen with placement_strategy top-left)")
     ap.add_argument("--label-every-n-cols", type=int, default=5,   help="Label every Nth column (default: 5)")
     ap.add_argument("--label-every-n-rows", type=int, default=3,   help="Label every Nth row (default: 3)")
     args = ap.parse_args()

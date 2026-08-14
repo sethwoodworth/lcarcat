@@ -40,6 +40,24 @@ Load only the docs relevant to your task:
 
 ---
 
+## Context discipline
+
+This project has visual debugging loops (screenshot → overlay → dump-grid → crop → re-shoot) that will exhaust context quickly if run inline. The main loop should stay lean and delegate.
+
+**Delegate visual inspection to a subagent.** Never `Read` a PNG in the main loop. Spawn the `visual-inspector` subagent with the file path(s) and a specific question ("is the right cap rounded?" not "look at this"). A single PNG in main-loop context costs 3-10k tokens; a subagent's text finding costs ~200. This applies to screenshots, overlay outputs, and cropped zooms alike.
+
+**Delegate cell-grid dumps to a subagent.** A full `test/get_cell_grid.py --dump-grid` is ~10k rows of ASCII — never let it land in the main loop. Spawn the `grid-inspector` subagent with the actual question ("is col 6 periwinkle on rows 4-16?"). It runs the query with bounded `--rows-from/--cols-from` flags and returns the answer, not the table.
+
+**Read files with `offset`/`limit`.** Never Read `block_demo.lua` in full for a make_A tweak; grep the function name first, then read a 40-line window. For the block-demo visual spec, `docs/block_demo/spec.md` is stable and small; per-tab observation logs live at `docs/block_demo/tab-<letter>-observations.md` and should be read one at a time, not all at once. This becomes doubly important around `/compact`: pre-compact full reads get re-injected as system-reminders on the next turn.
+
+**Grep before Read.** For "where is X defined" or "who calls Y", `grep -n` gives file:line pointers you can jump to with `Read` + `offset`. Whole-file reads for symbol lookup are wasteful.
+
+**Don't re-read after Edit.** The tool harness tracks file state — Edit only errors if the change failed. Re-reading to "verify" costs a full-file read for zero information.
+
+**Keep the visual spec stable.** `docs/block_demo/spec.md` is the stable expected-geometry reference — do not add session observations there. Session findings, "known issues" checklists, and fix logs go in the tab's `docs/block_demo/tab-<letter>-observations.md` file, or in `bd remember` / bead comments for cross-tab context.
+
+**Prefer bead memories over inline recap.** When you learn something durable ("the global statuscolumn always contributes 1 col"), `bd remember` it. That way the next session picks it up via `bd prime` instead of you re-deriving it from a full file read.
+
 ## Agent session behavior
 
 - **Track conversational decisions in beads as they happen.** When the user clarifies requirements, makes a design choice, or rules something out, add it to the relevant bead's `--notes` or `--design` field immediately.

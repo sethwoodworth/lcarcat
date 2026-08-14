@@ -3,13 +3,24 @@
     "beads@beads-marketplace": true
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(jq -r '.tool_input.command // empty'); if printf '%s' \"$CMD\" | grep -qE '(^|[|;&(`$])[[:space:]]*(cp|rsync|install|mv|ln|tee)([[:space:]]|$)' && printf '%s' \"$CMD\" | grep -qE '(\\$HOME|~|/Users/[^/]+|/home/[^/]+)/\\.config/|\\$CONFIG/|\\$XDG_CONFIG_HOME/'; then jq -nc '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Direct writes into ~/.config bypass ./deploy.sh (which maintains the source→dest mapping and verifies each copy). Run ./deploy.sh from the repo root instead.\"}}'; fi"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
         "hooks": [
           {
-            "command": "echo 'DEPLOY: run ./deploy.sh to mirror this change to ~/.config (skip for docs-only files: README.md, ROADMAP.md, AGENTS.md, .beads/, docs/)'",
-            "type": "command"
+            "type": "command",
+            "command": "FILE=$(jq -r '.tool_input.file_path // empty'); REPO=\"/Users/seth.woodworth/code/lcarcat\"; case \"$FILE\" in \"$REPO\"/*) REL=\"${FILE#$REPO/}\";; *) exit 0;; esac; if grep -qF -- \"\\\"$REL \" \"$REPO/deploy.sh\" 2>/dev/null; then echo \"auto-deploy: $REL is mapped by deploy.sh — running ./deploy.sh\" >&2; (cd \"$REPO\" && ./deploy.sh) >&2; fi"
           }
         ]
       }
