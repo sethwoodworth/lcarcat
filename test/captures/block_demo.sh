@@ -11,6 +11,14 @@
 #   bash test/captures/block_demo.sh          # all tabs
 #   bash test/captures/block_demo.sh A        # only tab A
 #
+# Set LCARCAT_DEBUG_BG=1 to toggle DEBUG_BG mode before capturing. Highlights
+# become: purple (#330033) = bar/stem territory, teal (#003333) = frame bg
+# territory, black = terminal background (no highlight). Outputs -debug suffix
+# screenshots alongside the normal set. Useful for diagnosing transparent image
+# region geometry.
+#
+#   LCARCAT_DEBUG_BG=1 bash test/captures/block_demo.sh A
+#
 # Evaluation criteria:
 #   no_errors   — nvim messages clean before screenshot
 #
@@ -71,6 +79,14 @@ sleep 1.0
 
 nvim_check_messages "$SOCK" "$WIN" "block-demo"
 
+# ── optional: activate DEBUG_BG diagnostic mode ──────────────────────────
+
+if [ "${LCARCAT_DEBUG_BG:-0}" = "1" ]; then
+    echo "DEBUG_BG mode: purple=bar/stem, teal=frame-bg, black=no-highlight"
+    nvim_run_cmd "$SOCK" "$WIN" "LcarsBlockDemoDebugBg"
+    sleep 0.5
+fi
+
 # ── screenshot each requested tab ────────────────────────────────────────
 #
 # Demo tabs start at nvim tab index 2 — tab 1 is the initial [No Name] buffer.
@@ -78,9 +94,15 @@ for i in "${TAB_INDICES[@]}"; do
     name="${TAB_NAMES[$((i-1))]}"
     nvim_goto_tab "$SOCK" "$WIN" "$((i+1))"
     sleep 1.0
-    raw="$SHOT_DIR/tab-${i}-${name}.png"
-    grid="$SHOT_DIR/tab-${i}-${name}-grid.png"
-    "$H" snapshot "tab-${i}-${name}"
+    if [ "${LCARCAT_DEBUG_BG:-0}" = "1" ]; then
+        raw="$SHOT_DIR/tab-${i}-${name}-debug.png"
+        grid="$SHOT_DIR/tab-${i}-${name}-debug-grid.png"
+        "$H" snapshot "tab-${i}-${name}-debug"
+    else
+        raw="$SHOT_DIR/tab-${i}-${name}.png"
+        grid="$SHOT_DIR/tab-${i}-${name}-grid.png"
+        "$H" snapshot "tab-${i}-${name}"
+    fi
     echo "Captured: $raw"
     # Regenerate the grid overlay so it can never lag the raw shot.
     python3 "$REPO/test/overlay_grid.py" "$raw" "$grid" >/dev/null

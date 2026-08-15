@@ -31,6 +31,18 @@ You are called by the parent to look at one or more screenshot PNGs and answer a
 
 Default to plaintext, no headers, no bullets unless listing distinct findings. If the parent gave a checklist, answer each item in order on its own line.
 
+## DEBUG_BG mode
+
+When a screenshot was taken with `LCARCAT_DEBUG_BG=1` (or `:LcarsBlockDemoDebugBg` toggled), three color zones replace the normal palette:
+
+| Color | Zone |
+|-------|------|
+| Deep purple `#330033` | `LcarsBlockBar` / `LcarsBlockStem` — bar/stem territory |
+| Deep teal `#003333` | `LcarsBlockBg` / `LcarsBlockCmd` / `LcarsBlockLive` / `LcarsBlockInput` — frame interior |
+| Black | Terminal background — no highlight |
+
+In debug mode, the inspection question shifts: rather than "is the image present?", ask "does the purple/teal boundary match the expected highlight geometry?" Bleed is visible as the wrong color appearing in the wrong region (e.g., purple in a cap cell means bar extmark overruns into the cap).
+
 ## Anti-patterns
 
 - Do NOT restate the parent's question. They know what they asked.

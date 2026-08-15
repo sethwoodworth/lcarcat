@@ -79,20 +79,21 @@ end
 -- ── highlight groups ───────────────────────────────────────────────────────
 
 local function setup_hls()
-  local bg_color = DEBUG_BG and "#330033" or p.bg
-  vim.api.nvim_set_hl(0, "LcarsBlockBar",     { bg = p.periwinkle, fg = p.periwinkle })
-  vim.api.nvim_set_hl(0, "LcarsBlockStem",    { bg = p.periwinkle, fg = p.periwinkle })
-  vim.api.nvim_set_hl(0, "LcarsBlockBg",      { bg = bg_color,     fg = p.fg })
-  vim.api.nvim_set_hl(0, "LcarsBlockCmd",     { bg = bg_color,     fg = p.fg,  bold = true })
-  vim.api.nvim_set_hl(0, "LcarsBlockChipOr",  { bg = p.orange,     fg = p.bg,  bold = true })
-  vim.api.nvim_set_hl(0, "LcarsBlockChipGo",  { bg = p.gold,       fg = p.bg })
-  vim.api.nvim_set_hl(0, "LcarsBlockChipSk",  { bg = p.sky,        fg = p.bg })
-  vim.api.nvim_set_hl(0, "LcarsBlockLive",    { bg = bg_color,     fg = p.sage, bold = true })
-  vim.api.nvim_set_hl(0, "LcarsBlockFold",    { bg = p.bg_dim,     fg = p.orange })
-  vim.api.nvim_set_hl(0, "LcarsBlockFoldDim", { bg = p.bg_dim,     fg = p.dim })
-  vim.api.nvim_set_hl(0, "LcarsBlockInput",   { bg = bg_color,     fg = p.fg })
-  vim.api.nvim_set_hl(0, "LcarsBlockCursor",  { bg = p.cursor,     fg = p.bg })
-  vim.api.nvim_set_hl(0, "Normal",            { bg = bg_color,     fg = p.fg })
+  local bar_bg   = DEBUG_BG and "#330033" or p.periwinkle
+  local bg_color = DEBUG_BG and "#003333" or p.bg
+  vim.api.nvim_set_hl(0, "LcarsBlockBar",     { bg = bar_bg,   fg = bar_bg })
+  vim.api.nvim_set_hl(0, "LcarsBlockStem",    { bg = bar_bg,   fg = bar_bg })
+  vim.api.nvim_set_hl(0, "LcarsBlockBg",      { bg = bg_color, fg = p.fg })
+  vim.api.nvim_set_hl(0, "LcarsBlockCmd",     { bg = bg_color, fg = p.fg,  bold = true })
+  vim.api.nvim_set_hl(0, "LcarsBlockChipOr",  { bg = p.orange, fg = p.bg,  bold = true })
+  vim.api.nvim_set_hl(0, "LcarsBlockChipGo",  { bg = p.gold,   fg = p.bg })
+  vim.api.nvim_set_hl(0, "LcarsBlockChipSk",  { bg = p.sky,    fg = p.bg })
+  vim.api.nvim_set_hl(0, "LcarsBlockLive",    { bg = bg_color, fg = p.sage, bold = true })
+  vim.api.nvim_set_hl(0, "LcarsBlockFold",    { bg = p.bg_dim, fg = p.orange })
+  vim.api.nvim_set_hl(0, "LcarsBlockFoldDim", { bg = p.bg_dim, fg = p.dim })
+  vim.api.nvim_set_hl(0, "LcarsBlockInput",   { bg = bg_color, fg = p.fg })
+  vim.api.nvim_set_hl(0, "LcarsBlockCursor",  { bg = p.cursor, fg = p.bg })
+  vim.api.nvim_set_hl(0, "Normal",            { bg = p.bg,     fg = p.fg })
 end
 
 -- ── image state ────────────────────────────────────────────────────────────

@@ -272,6 +272,47 @@ These produce PNGs in `test/screenshots/<name>/` but have no programmatic assert
 
 ---
 
+## DEBUG_BG diagnostic mode
+
+`block_demo.lua` has a `DEBUG_BG` flag (toggled via `:LcarsBlockDemoDebugBg`) that swaps highlight group backgrounds to diagnostic colors, making transparent image regions and highlight geometry immediately visible.
+
+### Color zones
+
+| Zone color | Meaning |
+|------------|---------|
+| Deep purple `#330033` | `LcarsBlockBar` / `LcarsBlockStem` — bar/stem territory |
+| Deep teal `#003333` | `LcarsBlockBg` / `LcarsBlockCmd` / `LcarsBlockLive` / `LcarsBlockInput` — frame interior territory |
+| Black | Terminal background — no highlight (Normal bg is never changed) |
+
+### When to use it
+
+Use DEBUG_BG when diagnosing transparent image corners or inner fillets. Against a black background, transparent PNG regions are invisible. With diagnostic highlights, the boundary between "highlight covers this cell" and "image covers this cell" is immediately obvious.
+
+### How to capture
+
+```bash
+# Single tab with debug highlights
+LCARCAT_DEBUG_BG=1 bash test/captures/block_demo.sh A
+
+# All tabs with debug highlights
+LCARCAT_DEBUG_BG=1 bash test/captures/block_demo.sh
+```
+
+Output files get a `-debug` suffix: `tab-1-A-debug.png`, `tab-1-A-debug-grid.png`. Normal (non-debug) screenshots are unaffected.
+
+### Diagnostic patterns
+
+- **Teal in a stub row fillet area** → `LcarsBlockBg` extends there (correct bg assignment; check image z-order / placement)
+- **Purple in a chip gap** → gap cells have `LcarsBlockBar` highlight bleed
+- **Purple in cap cells** → `bar_w` extends into the cap region (extmark covers the image)
+- **Black where teal expected** → highlight not set; extmark is missing for that row/cell range
+
+### Inspecting debug screenshots
+
+Delegate to the `visual-inspector` subagent. The inspection question shifts from "is the image present?" to "does each color zone's boundary match the expected highlight geometry?" — e.g., "On tab A, does the purple zone end exactly at col `lp` or does it bleed into the cap region?"
+
+---
+
 ## Writing a new test or capture
 
 **Integration test** (`test/integration/`) — use when you have a machine-verifiable assertion. Exit 0/1 must reflect pass/fail. Use `get_cell_grid.py --expect-bg` or `get-text` + grep for assertions. See existing scripts for patterns.

@@ -13,3 +13,4 @@
 
 # Per-scenario screenshot output (not committed; may be published separately)
 test/screenshots/
+.DS_Store
