@@ -188,7 +188,16 @@ local function stem_left_rows(buf, r0, r1, x)
 end
 
 local function stem_right_rows(buf, r0, r1, x)
-  for r = r0, r1 - 1 do hl(buf, "LcarsBlockStem", r, x - STEM_W + 1, x + 1) end
+  -- Use virt_text_win_col (display col) not hl (byte col) — content lines may
+  -- contain multibyte chars (├ ─ │) which shift byte offsets away from display cols.
+  for r = r0, r1 - 1 do
+    vim.api.nvim_buf_set_extmark(buf, ns, r, 0, {
+      virt_text         = {{ " ", "LcarsBlockStem" }},
+      virt_text_pos     = "overlay",
+      virt_text_win_col = x - GUTTER_W,
+      priority          = HL_PRI,
+    })
+  end
 end
 
 -- Place chips spanning two rows (r_top = bar row 0, r_text = bar row 1).
@@ -396,7 +405,7 @@ local function make_B(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   })
   local out = {}
   for _, l in ipairs(content) do
-    local pad_n = math.max(0, bw - 1 - #l)
+    local pad_n = math.max(0, bw - 1 - vim.fn.strdisplaywidth(l))
     out[#out+1] = pad(lp) .. l .. string.rep(" ", pad_n) .. " "
   end
   local o0 = append(lines, out)
@@ -407,17 +416,19 @@ local function make_B(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   })
   append(lines, { "" })
 
-  local rx     = lp + bw - 1          -- right stem col (rightmost cell)
+  local rx      = lp + bw - 1          -- right stem col (rightmost display col)
   local elbow_x = lp + bw - ELBOW_W   -- right elbow starts here
-  local bar_x0  = lp + HCAP_W         -- bar starts after left cap
-  local bar_w   = bw - HCAP_W - ELBOW_W  -- bar ends before right elbow
+  -- Bar starts after the 2-col vcap on the left; the bar highlight must not cover
+  -- the vcap cells or its transparent arc corners will become solid rectangles.
+  local bar_x0  = lp + CAP_W
+  local bar_w   = bw - CAP_W - ELBOW_W  -- bar ends before right elbow
 
   local function annotate(buf)
     barrow(buf, h0,     bar_x0, bar_w, "LcarsBlockBar")
     barrow(buf, h0 + 1, bar_x0, bar_w, "LcarsBlockBar")
     hl(buf, "LcarsBlockStem", h0 + 2, rx - STEM_W + 1, rx + 1)
-    chips_at(buf, h0 + 1, lp + HCAP_W + 2, chips)
-    mark_at(buf, h0 + 2, lp + HCAP_W + 1, cmd, "LcarsBlockBg")
+    chips_at(buf, h0 + 1, lp + CAP_W + 2, chips)
+    mark_at(buf, h0 + 2, lp + CAP_W + 1, cmd, "LcarsBlockBg")
     stem_right_rows(buf, o0, o0 + #out, rx)
     hl(buf, "LcarsBlockStem", f0,     rx - STEM_W + 1, rx + 1)
     barrow(buf, f0 + 1, bar_x0, bar_w, "LcarsBlockBar")
@@ -427,10 +438,8 @@ local function make_B(lines, lp, bw, dir, cw, ch, cmd, content, chips)
   return annotate, {
     { path = elbow(dir,cw,ch,"top",   "right"), dx=elbow_x, dy=h0, w=ELBOW_W, h=ELBOW_H },
     { path = elbow(dir,cw,ch,"bottom","right"), dx=elbow_x, dy=f0, w=ELBOW_W, h=ELBOW_H },
-    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=h0,     w=HCAP_W, h=1 },
-    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=h0 + 1, w=HCAP_W, h=1 },
-    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=f0 + 1, w=HCAP_W, h=1 },
-    { path = hcap(dir,cw,ch,"left", HCAP_W), dx=lp, dy=f0 + 2, w=HCAP_W, h=1 },
+    { path = vcap(dir,cw,ch,"left"), dx=lp, dy=h0,     w=CAP_W, h=2 },
+    { path = vcap(dir,cw,ch,"left"), dx=lp, dy=f0 + 1, w=CAP_W, h=2 },
   }
 end
 
