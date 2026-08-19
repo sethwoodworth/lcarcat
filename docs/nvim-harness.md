@@ -30,7 +30,7 @@ All `kitty @` commands take `--to "$SOCK"` where `SOCK="unix:/tmp/lcarcat-test.s
 
 **PID file:** `teardown` uses `$SOCK.pid` to force-kill if `close-window` doesn't take. The PID file is written by `launch` and removed by `teardown`.
 
-**`LCARCAT_KEEP_ALIVE=1`:** Skip `teardown` on exit so you can inspect the live kitty window manually. Screenshots already on disk remain regardless.
+**`LCARCAT_KEEP_ALIVE=1`:** Skip `teardown` on exit so you can inspect the live kitty window manually. Screenshots already on disk remain regardless. Export this variable **before** calling `nvim_harness_setup` — the setup function installs the teardown trap based on the value at call time.
 
 **Window IDs:** Get them once after `launch` via `kitty @ ls`, then reuse `id:N` addressing throughout. Never use `recent:N` — the index shifts on every `focus-window` or `send-text` call.
 
@@ -127,7 +127,7 @@ These are empirical minimums at font_size 18 Fantasque Sans Mono on macOS. Add 5
 
 | Event | Minimum sleep |
 |-------|---------------|
-| After `./screenshot_harness.sh launch` | 1.5s |
+| After `./screenshot_harness.sh launch` | 0s — the harness now sleeps 2.5s internally after the socket appears, waiting for zsh precmd to complete its CSI 16t probe |
 | After `nvim` command in shell | 2.5s |
 | After `:lua` render command | 1.0–1.5s |
 | After tab switch | 0.8–1.2s |
@@ -166,7 +166,28 @@ for _, fn in ipairs(closures) do fn(buf) end
 
 ---
 
-## 6. Windowless image placement
+## 6. Inspecting live nvim state via RPC
+
+When screenshots show unexpected state, use nvim's built-in RPC to query the live instance directly — without sending keystrokes that could change the state you're inspecting.
+
+```bash
+# Get the server address (send once, then reuse)
+kitty @ --to "$SOCK" send-text --match "id:$WIN" \
+  ":call writefile([v:servername], '/tmp/nvim_addr.txt')\r"
+sleep 0.3
+NVIM_SERVER=$(cat /tmp/nvim_addr.txt)
+
+# Eval any Lua expression
+nvim --server "$NVIM_SERVER" --remote-expr "luaeval('vim.inspect(vim.api.nvim_list_tabpages())')"
+```
+
+`test/nvim_state.sh` wraps this into a full report: mode, tab list, current buffer (name/line count/buftype), first 10 buffer lines with byte lengths, and window options. Run it whenever you need to confirm what nvim actually contains vs what the screenshot shows.
+
+**Float windows:** `vim.api.nvim_list_wins()` + `nvim_win_get_config(w).relative ~= ""` lists all floating windows. Unexpected floats (e.g. narrow column strips with `zindex=1`) are often LCARS chrome (gutter_eob_fill, terminal_frame), not overlays hiding content.
+
+---
+
+## 7. Windowless image placement
 
 image.nvim images can be placed at absolute screen coordinates without a buffer/window:
 
@@ -204,9 +225,13 @@ vim.api.nvim_create_autocmd("TabEnter", {
 
 **Topline tracking:** images must be placed at `dy = topline_offset + row_in_buffer`. Read `topline` at render time via `vim.fn.line("w0", win) - 1` — do not cache it. If the window has scrolled since last render, stale topline causes misaligned images.
 
+**Buffer-bound placement (`window + buffer + x/y`):** pass `window`, `buffer`, `x`, and `y` to `from_file()` to bind an image to a buffer row. image.nvim registers a `WinScrolled` autocmd internally and recomputes position via `vim.fn.screenpos()` on each scroll — no manual autocmd needed.
+
+**Partial viewport clipping is not handled.** When the image's anchor row (`y`) scrolls above `topline`, `vim.fn.screenpos()` returns `{row=0, col=0}` and the image disappears entirely — there is no partial overlap. To get progressive row-by-row clipping (row 0 hides first, rows 1–2 remain visible), place one `from_file()` per image row rather than one call for the full image. For a 3-row elbow this means three 5×1 placements at `y=0`, `y=1`, `y=2`.
+
 ---
 
-## 7. Elbow and corner pixel anatomy
+## 8. Elbow and corner pixel anatomy
 
 Verified by pixel sampling the actual PNGs at 19×38px/cell using Pillow. The cell layout in your Lua buffer must match the image's internal row structure — one cell = one buffer row.
 
@@ -260,7 +285,7 @@ corner-bottom-left row 0: partial bar (gap at cols 4–5)
 
 ---
 
-## 8. Semantic color checks for bar validation
+## 9. Semantic color checks for bar validation
 
 When validating that block bars rendered correctly, use `get_cell_grid.py --scan-bg periwinkle` to find which rows kitty's terminal model has as periwinkle — without knowing the exact row number in advance.
 
@@ -278,7 +303,7 @@ This is the right tool when you know a bar should exist somewhere but don't know
 
 ---
 
-## 9. Composable helper library (`test/nvim_harness_helpers.sh`)
+## 10. Composable helper library (`test/nvim_harness_helpers.sh`)
 
 `test/nvim_harness_helpers.sh` wraps the patterns from sections 1–3 into named functions. Source it from any scenario that opens nvim.
 
@@ -341,7 +366,7 @@ The helpers do **not** launch kitty, take screenshots, or run teardown — those
 
 ---
 
-## 10. Style-B chip rendering in extmarks
+## 11. Style-B chip rendering in extmarks
 
 Chips span both bar rows (full 2-row height). Per the LCARS design and `zsh/prompt_lcars.zsh _lcars_chips()`:
 
@@ -363,7 +388,7 @@ Reference implementation: `nvim/lua/lcars/block_demo.lua chips_block()` and `zsh
 
 ---
 
-## 11. Stub row highlight convention
+## 12. Stub row highlight convention
 
 The elbow image (ELBOW_W=5, ELBOW_H=3) occupies cols `lp` to `lp+4` across all 3 rows including the stub row (header h0+2 or footer f0).
 

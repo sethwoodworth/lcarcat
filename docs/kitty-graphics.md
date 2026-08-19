@@ -104,6 +104,16 @@ The zsh prompt now uses **Unicode placeholder cells** (not cursor-anchored), whi
 
 Raw Unicode placeholder codepoints (`U+10EEEE`) **do not render inside nvim's own tabline/statusline strings**. Nvim controls those SGR/codepoints. Windowless image.nvim is the only way to put images on those rows.
 
+**The image ID color cannot be carried by an nvim highlight group.** Kitty reads the image ID from `\e[38;5;<id>m` (256-color foreground). Nvim with `termguicolors=true` always emits `\e[38;2;r;g;b;m` (24-bit) for any `fg` set via `nvim_set_hl` — there is no way to force 256-color output from the highlight system. The only paths that work:
+
+1. **Direct `io.write` at cursor position** — move the cursor to the target screen cell and write `\e[38;5;<id>m<PH><row-diacritic><col-diacritic>` via `io.write()`, bypassing nvim's buffer renderer entirely. This is what image.nvim's `write_placeholder()` (`lua/image/backends/kitty/helpers.lua`) does.
+
+2. **Disable `termguicolors` for the placeholder window** — `vim.wo[win].termguicolors = false` before rendering placeholder rows forces nvim to emit 256-color SGR codes. The rest of the buffer (filler lines) can have termguicolors re-enabled via `winhighlight` overrides, but this is fragile.
+
+**Neither option works reliably from nvim Lua.** nvim's post-command `update_screen()` repaints the buffer cells after any `:lua` command returns, overwriting any bytes written via `io.write`. `vim.defer_fn` defers past that repaint, but any subsequent nvim redraw (cursor move, window focus, etc.) overwrites the placeholders again. There is no stable hook point from Lua that fires after nvim's screen writes are complete and before kitty composites the image.
+
+**The correct path for images in nvim buffers is `image.nvim from_file()` with `window+buffer` binding** — not unicode placeholders. image.nvim registers its own `WinScrolled` autocmd and uses `vim.fn.screenpos()` to recompute placement on every scroll. Unicode placeholders in nvim are an opt-in experiment (`kitty_method = "unicode-placeholders"`) with known limitations (no crop support) and are not the default path.
+
 ---
 
 ## Image id management

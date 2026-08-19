@@ -54,6 +54,12 @@ case "$cmd" in
       echo "ERROR: kitty socket never appeared at $SOCK_PATH" >&2
       exit 1
     fi
+    # Wait for zsh to finish startup. The lcars precmd fires a CSI 16t cell-size
+    # probe on the TRAPWINCH triggered by --start-as=fullscreen. Any keystroke
+    # sent before that exchange completes lands in the zsh line editor as visible
+    # garbage (^[[6;38;19t). The socket appearing is not enough — zsh needs more
+    # time to complete precmd and render the first prompt.
+    sleep 2.5
     # Record the kitty pid so teardown can force-kill if remote-control fails.
     pid="$(_find_kitty_pid)"
     if [ -n "$pid" ]; then
