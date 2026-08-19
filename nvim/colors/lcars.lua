@@ -56,6 +56,7 @@ vim.opt.fillchars:append({ eob = " " })
 vim.opt.statuscolumn = "%#LineNr#%=%l%#LineNr# "
 require("lcars.gutter_eob_fill").setup()
 require("lcars.terminal_frame")
+require("lcars.spike_placeholder")
 hi("Visual",        { fg = p.bg, bg = p.periwinkle })
 hi("VisualNOS",     { fg = p.bg, bg = p.periwinkle })
 hi("Search",        { fg = p.bg, bg = p.gold })

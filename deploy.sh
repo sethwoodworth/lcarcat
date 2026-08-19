@@ -44,6 +44,7 @@ mappings=(
   "nvim/lua/lcars/gutter_eob_fill.lua $CONFIG/nvim/lua/lcars/gutter_eob_fill.lua"
   "nvim/lua/lcars/terminal_frame.lua  $CONFIG/nvim/lua/lcars/terminal_frame.lua"
   "nvim/lua/lcars/block_demo.lua      $CONFIG/nvim/lua/lcars/block_demo.lua"
+  "nvim/lua/lcars/spike_placeholder.lua $CONFIG/nvim/lua/lcars/spike_placeholder.lua"
   "nvim/lua/lualine/themes/lcars.lua $CONFIG/nvim/lua/lualine/themes/lcars.lua"
   ".claude/hooks/kitty-tab-alert.sh  $HOME/.claude/hooks/kitty-tab-alert.sh"
 )
