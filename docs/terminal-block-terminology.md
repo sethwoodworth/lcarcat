@@ -62,7 +62,8 @@ gap before the next block.
 
 **footer** — a closing 1-row hcap image at the bottom of a block's output
 region, terminating the stem. Symmetric complement to the header cap.
-Currently absent from the design; proposed as the natural close of a frame.
+Present on every done or failed block; absent on live blocks (the block is
+still open). Rendered as a Unicode placeholder cell so it scrolls with content.
 
 **frame** — the full LCARS chrome around one block: header + stem + footer.
 The unit being built in the nvim-native terminal work.

@@ -13,6 +13,8 @@ Load only the docs relevant to your task:
 | zsh LCARS prompt | `docs/zsh-prompt.md`, `docs/asset-pipeline.md` |
 | kitty config or image rendering | `docs/kitty-graphics.md`, `docs/asset-pipeline.md` |
 | nvim chrome (elbows, caps, frame) | `docs/nvim-chrome.md`, `docs/asset-pipeline.md` |
+| nvim terminal frame (block_record, frame_renderer, frame_buffer, pty_session, term_input, terminal_win) | `docs/nvim-terminal-frame.md`, `docs/nvim-terminal-research.md` |
+| shell block terminology (block, frame, stem, header, footer, gap, OSC 133) | `docs/terminal-block-terminology.md` |
 | colors or palette | `docs/palette.md` |
 | screenshot tests or evaluating rendering | `docs/testing.md` |
 | evaluating nvim gutter color | `docs/testing.md` — run `test/integration/nvim_eob_gutter.sh` |
