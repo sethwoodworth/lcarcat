@@ -36,6 +36,7 @@ mappings=(
   "assets/swoop-top-left-9999ff-48x3cells-19x38pixels.png    $CONFIG/kitty/lcars/swoop-top-left-9999ff-48x3cells-19x38pixels.png"
   "assets/swoop-bottom-left-9999ff-48x3cells-19x38pixels.png $CONFIG/kitty/lcars/swoop-bottom-left-9999ff-48x3cells-19x38pixels.png"
   "nvim/colors/lcars.lua         $CONFIG/nvim/colors/lcars.lua"
+  "nvim/lua/lcars/assets.lua     $CONFIG/nvim/lua/lcars/assets.lua"
   "nvim/lua/lcars/palette.lua    $CONFIG/nvim/lua/lcars/palette.lua"
   "nvim/lua/lcars/statusline.lua $CONFIG/nvim/lua/lcars/statusline.lua"
   "nvim/lua/lcars/tabline.lua    $CONFIG/nvim/lua/lcars/tabline.lua"
@@ -45,6 +46,7 @@ mappings=(
   "nvim/lua/lcars/terminal_frame.lua  $CONFIG/nvim/lua/lcars/terminal_frame.lua"
   "nvim/lua/lcars/block_demo.lua      $CONFIG/nvim/lua/lcars/block_demo.lua"
   "nvim/lua/lcars/spike_placeholder.lua $CONFIG/nvim/lua/lcars/spike_placeholder.lua"
+  "nvim/lua/lcars/spike_baleia.lua      $CONFIG/nvim/lua/lcars/spike_baleia.lua"
   "nvim/lua/lualine/themes/lcars.lua $CONFIG/nvim/lua/lualine/themes/lcars.lua"
   ".claude/hooks/kitty-tab-alert.sh  $HOME/.claude/hooks/kitty-tab-alert.sh"
 )

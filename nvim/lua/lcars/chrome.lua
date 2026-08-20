@@ -16,13 +16,14 @@
 
 local p = require("lcars.palette")
 local ok_image, image = pcall(require, "image")
+local assets = require("lcars.assets")
 
 local M = { enabled = false, ready = false }
 
 local BAR_ROWS, STEM_ROWS = 1, 1
 local H = BAR_ROWS + STEM_ROWS -- image rows (2): bar + stem/fillet
 
-local cache_dir = vim.fn.stdpath("cache") .. "/lcars"
+local cache_dir = assets.cache_dir
 local gen_py = vim.fn.expand("~/.config/kitty/lcars/gen_swoops.py")
 
 -- imgs: live image.nvim objects. gen: set of gutter widths already generated for the
@@ -33,18 +34,8 @@ local state = { cw = nil, ch = nil, main_W = nil, imgs = {}, gen = {} }
 -- ---------------------------------------------------------------------------
 -- assets
 -- ---------------------------------------------------------------------------
--- Reuse image.nvim's physical cell size so the PNG matches exactly what it renders
--- against (avoids Retina half-scale). ceil so we slightly overshoot and downscale.
-local function cell_px()
-  local ok_term, term = pcall(require, "image.utils.term")
-  if ok_term and term.get_size then
-    local sz = term.get_size()
-    if sz and sz.cell_width and sz.cell_width > 0 then
-      return math.ceil(sz.cell_width), math.ceil(sz.cell_height)
-    end
-  end
-  return 19, 38 -- fallback
-end
+local cell_px    = assets.cell_px
+local asset_name = assets.asset_name
 
 -- One directory per (cell size, gutter width) so font/zoom changes never reuse a
 -- stale-sized PNG. gen_swoops writes descriptive per-variant PNG names (see asset_name)
@@ -52,23 +43,9 @@ end
 local function asset_dir(stem) return cache_dir .. "/" .. state.cw .. "x" .. state.ch .. "-" .. stem end
 local function asset_path(name, stem) return asset_dir(stem) .. "/" .. name .. ".png" end
 
--- Mirror of gen_swoops.py's asset_name(): rebuild the exact descriptive filename the
--- generator writes for a variant so we read back the right one. Keep in lock-step with
--- the Python version. Returns the base name WITHOUT ".png" (asset_path appends it).
-local function asset_name(kind, color, cols, rows, cellw, cellh, orient, facing, gap, bg)
-  orient = orient or "round"
-  facing = facing or "left"
-  local parts = { kind, orient, facing, color }
-  if bg then parts[#parts + 1] = "background" .. bg end
-  parts[#parts + 1] = cols .. "x" .. rows .. "cells"
-  parts[#parts + 1] = cellw .. "x" .. cellh .. "pixels"
-  if gap ~= nil then parts[#parts + 1] = "gap" .. gap end
-  return table.concat(parts, "-")
-end
-
 -- The corner elbows always render periwinkle over a baked-black backdrop; capture that
 -- so both the readiness check and the placements name the same file.
-local CHROME_COLOR, CHROME_BG = "9999ff", "000000"
+local CHROME_COLOR, CHROME_BG = assets.color, "000000"
 
 local function regenerate(stem, cb)
   local dir = asset_dir(stem)
@@ -84,7 +61,7 @@ local function regenerate(stem, cb)
     return
   end
   vim.fn.jobstart({
-    "uv", "run", "--with", "pillow", gen_py, "--color", "9999ff",
+    "uv", "run", "--with", "pillow", gen_py, "--color", CHROME_COLOR,
     "--outdir", dir, "--stem-rows", tostring(STEM_ROWS),
     "--cellw", tostring(state.cw), "--cellh", tostring(state.ch),
     "--bar-rows", tostring(BAR_ROWS), "--stem-cols", tostring(stem),

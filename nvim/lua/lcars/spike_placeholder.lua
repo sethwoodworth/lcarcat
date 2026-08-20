@@ -11,9 +11,10 @@ local M = {}
 vim.opt.shortmess:append("I")
 
 local ok_image, image = pcall(require, "image")
+local assets = require("lcars.assets")
 
-local cache_dir = vim.fn.stdpath("cache") .. "/lcars"
-local COLOR     = "9999ff"
+local cache_dir = assets.cache_dir
+local COLOR     = assets.color
 local ELBOW_W   = 5
 local ELBOW_H   = 3
 -- Place the elbow away from the outer LCARS frame so it's clearly distinct.
@@ -21,30 +22,8 @@ local ELBOW_H   = 3
 local TEST_DY   = 10
 local TEST_DX   = 10
 
--- Same cell_px() pattern as block_demo / terminal_frame (no shared util exists).
-local function cell_px()
-  local ok_t, term = pcall(require, "image.utils.term")
-  if ok_t and term.get_size then
-    local sz = term.get_size()
-    if sz and sz.cell_width and sz.cell_width > 0 then
-      return math.ceil(sz.cell_width), math.ceil(sz.cell_height)
-    end
-  end
-  return 19, 38
-end
-
--- Same find_asset_dir() pattern as block_demo.
-local function find_asset_dir(cw, ch)
-  local dirs = vim.fn.glob(cache_dir .. "/" .. cw .. "x" .. ch .. "-*", false, true)
-  local ep = "/elbow-top-left-" .. COLOR .. "-" .. ELBOW_W .. "x" .. ELBOW_H
-             .. "cells-" .. cw .. "x" .. ch .. "pixels.png"
-  local fallback = nil
-  for _, d in ipairs(dirs) do
-    if vim.fn.filereadable(d .. ep) == 1 then return d end
-    fallback = fallback or d
-  end
-  return fallback or (cache_dir .. "/" .. cw .. "x" .. ch .. "-4")
-end
+local cell_px        = assets.cell_px
+local find_asset_dir = assets.find_asset_dir
 
 local function elbow_path(dir, cw, ch)
   return dir .. "/elbow-top-left-" .. COLOR

@@ -11,11 +11,12 @@ local M = {}
 
 local ok_image, image = pcall(require, "image")
 local p = require("lcars.palette")
+local assets = require("lcars.assets")
 
 local ELBOW_W, ELBOW_H = 5, 3
 local CORNER_W, CORNER_H = 6, 2
-local COLOR = "9999ff"
-local cache_dir = vim.fn.stdpath("cache") .. "/lcars"
+local COLOR     = assets.color
+local cache_dir = assets.cache_dir
 
 -- Margin to stay inside outer LCARS chrome (gutter + top bar rows)
 local LEFT_PAD = 6   -- cols from window left edge to block left edge
@@ -25,32 +26,8 @@ local DEBUG_BG = false  -- set true (or toggle via :LcarsBlockDemoDebugBg) to re
 
 -- ── asset helpers ─────────────────────────────────────────────────────────
 
-local function cell_px()
-  local ok_t, term = pcall(require, "image.utils.term")
-  if ok_t and term.get_size then
-    local sz = term.get_size()
-    if sz and sz.cell_width and sz.cell_width > 0 then
-      return math.ceil(sz.cell_width), math.ceil(sz.cell_height)
-    end
-  end
-  return 19, 38
-end
-
-local function find_asset_dir(cw, ch)
-  local dirs = vim.fn.glob(cache_dir .. "/" .. cw .. "x" .. ch .. "-*", false, true)
-  local ep = "/elbow-top-left-" .. COLOR .. "-" .. ELBOW_W .. "x" .. ELBOW_H
-             .. "cells-" .. cw .. "x" .. ch .. "pixels.png"
-  local cp = "/corner-top-left-" .. COLOR .. "-background000000-"
-             .. CORNER_W .. "x" .. CORNER_H .. "cells-" .. cw .. "x" .. ch .. "pixels.png"
-  local fallback = nil
-  for _, d in ipairs(dirs) do
-    if vim.fn.filereadable(d .. ep) == 1 then
-      if vim.fn.filereadable(d .. cp) == 1 then return d end
-      fallback = fallback or d
-    end
-  end
-  return fallback or (cache_dir .. "/" .. cw .. "x" .. ch .. "-4")
-end
+local cell_px       = assets.cell_px
+local find_asset_dir = assets.find_asset_dir
 
 local function elbow(dir, cw, ch, orient, facing)
   return dir .. "/elbow-" .. orient .. "-" .. facing .. "-" .. COLOR

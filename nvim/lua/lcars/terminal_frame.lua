@@ -14,38 +14,20 @@ local M = { enabled = false }
 
 local ok_image, image = pcall(require, "image")
 local p = require("lcars.palette")
+local assets = require("lcars.assets")
 
-local CHROME_COLOR, CHROME_BG = "9999ff", "000000"
-local cache_dir = vim.fn.stdpath("cache") .. "/lcars"
+local CHROME_COLOR, CHROME_BG = assets.color, "000000"
+local cache_dir = assets.cache_dir
 
 local state = { cw = nil, ch = nil, imgs = {}, floats = {} }
 
--- ── asset helpers (mirrors chrome.lua) ────────────────────────────────────
+-- ── asset helpers ─────────────────────────────────────────────────────────
 
-local function cell_px()
-  local ok_term, term = pcall(require, "image.utils.term")
-  if ok_term and term.get_size then
-    local sz = term.get_size()
-    if sz and sz.cell_width and sz.cell_width > 0 then
-      return math.ceil(sz.cell_width), math.ceil(sz.cell_height)
-    end
-  end
-  return 19, 38
-end
+local cell_px    = assets.cell_px
+local asset_name = assets.asset_name
 
 local function capcols(cw, ch)
   return math.max(1, math.floor(ch / 2 / cw + 0.5))
-end
-
-local function asset_name(kind, color, cols, rows, cellw, cellh, orient, facing, gap, bg)
-  orient = orient or "round"
-  facing = facing or "left"
-  local parts = { kind, orient, facing, color }
-  if bg then parts[#parts + 1] = "background" .. bg end
-  parts[#parts + 1] = cols .. "x" .. rows .. "cells"
-  parts[#parts + 1] = cellw .. "x" .. cellh .. "pixels"
-  if gap ~= nil then parts[#parts + 1] = "gap" .. gap end
-  return table.concat(parts, "-")
 end
 
 -- chrome.lua writes hcap assets into whichever main_stem dir it uses (e.g. "17x34-4").
