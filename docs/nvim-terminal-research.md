@@ -1,5 +1,12 @@
 # nvim Terminal Frame — Research Index
 
+<!-- Read this doc when: looking up specific nvim API behaviour, third-party
+     plugin capabilities, or open research questions for the terminal frame system.
+     Write to this doc when: a spike answers an open research question — add the
+     finding under the relevant section and mark the question resolved.
+     For *why* a particular approach was chosen over alternatives, see
+     docs/architecture-decisions.md instead. -->
+
 Reference for agents and developers implementing the LCARS terminal frame system.
 Read the sections relevant to your task; do not read everything at once.
 
@@ -183,6 +190,6 @@ These should be prototyped before committing to an implementation path:
 
 3. **Named pipe for stderr**: Does zsh interactive mode support `2>(process substitution)` for stderr redirection? Needs shell-level testing.
 
-4. **baleia.nvim performance under high-velocity output** (e.g. `ping`, `tail -f`). May need chunked/debounced buffer updates.
+4. ~~**baleia.nvim performance under high-velocity output**~~ **Resolved (lcarcat-dk5):** sync mode is acceptable for bursts; use `async=true` (default) in production. Debounce still recommended for very high velocity — see lcarcat-z8h. Full findings in `docs/spike-2-baleia-findings.md`.
 
 5. **Multiple sessions in same nvim**: Standard pattern works (table of session objects). Test: two `LcarsTerm` splits open simultaneously, both receiving output.
