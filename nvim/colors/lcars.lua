@@ -95,7 +95,10 @@ hi("TabLineSel",    { fg = p.bg, bg = p.orange, bold = true })
 hi("TabLineFill",   { fg = p.fg, bg = p.bg })
 hi("WinBar",        { fg = p.fg, bg = p.bg })
 hi("WinBarNC",      { fg = p.dim, bg = p.bg })
-hi("LcarsTermBar",  { fg = p.periwinkle, bg = p.periwinkle })
+hi("LcarsTermBar",         { fg = p.periwinkle, bg = p.periwinkle })
+hi("LcarsTermStemLive",    { fg = p.sage,        bg = p.sage })
+hi("LcarsTermFrameFailed", { fg = p.red,         bg = p.red })
+hi("LcarsTermStemFailed",  { fg = p.red,         bg = p.red })
 
 -- ---------------------------------------------------------------------------
 -- Legacy syntax groups
