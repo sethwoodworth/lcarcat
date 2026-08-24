@@ -50,9 +50,28 @@ When a screenshot was taken with `LCARCAT_DEBUG_BG=1` (or `:LcarsBlockDemoDebugB
 
 In debug mode, the inspection question shifts: rather than "is the image present?", ask "does the purple/teal boundary match the expected highlight geometry?" Bleed is visible as the wrong color appearing in the wrong region (e.g., purple in a cap cell means bar extmark overruns into the cap).
 
+## LCARS common failure modes — always check these with crop_grid.py
+
+When reviewing any frame_renderer or block_demo screenshot, unconditionally run these crops before answering, even if the parent didn't ask for them:
+
+1. **Elbow zone artifact** — periwinkle bleed behind a non-periwinkle bar.
+   Crop cols `lp` to `lp+ELBOW_W+1` (typically cols 6–12), all header bar rows of each block.
+   Report every distinct color you see in that zone per block.
+
+2. **Bar overrun past right cap** — bar highlight covering the cap cells.
+   Crop the rightmost 4 cols of each header and footer bar row.
+   Report whether the cap cells are bar-colored or default (black) bg.
+
+3. **State color fidelity** — bar, stem, elbow, and cap all matching for each block.
+   Crop the left 12 cols and right 4 cols of one bar row per block.
+   Report the distinct colors seen. Any periwinkle on a live or failed block is a defect.
+
+Use `crop_grid.py` with `--zoom 6` for all of the above. Full-resolution screenshots hide 1–2 cell artifacts — always zoom in on the known-suspicious zones before reporting "no defect."
+
 ## Anti-patterns
 
 - Do NOT restate the parent's question. They know what they asked.
 - Do NOT recap the LCARS design constants. The parent knows them.
 - Do NOT describe unrelated tabs when asked about one specific tab.
 - Do NOT run screenshot captures or deploys — that's the parent's job. You look, you report.
+- Do NOT report "solid color bar" without first running the elbow zone and cap zone crops above. Full-resolution scans miss narrow artifacts.

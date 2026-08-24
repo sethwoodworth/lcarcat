@@ -48,7 +48,8 @@ mappings=(
   "nvim/lua/lcars/spike_placeholder.lua $CONFIG/nvim/lua/lcars/spike_placeholder.lua"
   "nvim/lua/lcars/spike_baleia.lua      $CONFIG/nvim/lua/lcars/spike_baleia.lua"
   "nvim/lua/lcars/block_record.lua     $CONFIG/nvim/lua/lcars/block_record.lua"
-  "nvim/lua/lcars/image_registry.lua  $CONFIG/nvim/lua/lcars/image_registry.lua"
+  "nvim/lua/lcars/image_registry.lua   $CONFIG/nvim/lua/lcars/image_registry.lua"
+  "nvim/lua/lcars/frame_renderer.lua  $CONFIG/nvim/lua/lcars/frame_renderer.lua"
   "nvim/lua/lualine/themes/lcars.lua $CONFIG/nvim/lua/lualine/themes/lcars.lua"
   ".claude/hooks/kitty-tab-alert.sh  $HOME/.claude/hooks/kitty-tab-alert.sh"
 )
