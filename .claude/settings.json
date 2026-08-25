@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(python3 test/crop_grid.py *)"
+    ]
+  },
   "enabledPlugins": {
     "beads@beads-marketplace": true
   },

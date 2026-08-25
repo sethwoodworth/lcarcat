@@ -50,6 +50,8 @@ mappings=(
   "nvim/lua/lcars/block_record.lua     $CONFIG/nvim/lua/lcars/block_record.lua"
   "nvim/lua/lcars/image_registry.lua   $CONFIG/nvim/lua/lcars/image_registry.lua"
   "nvim/lua/lcars/frame_renderer.lua  $CONFIG/nvim/lua/lcars/frame_renderer.lua"
+  "nvim/lua/lcars/frame_buffer.lua    $CONFIG/nvim/lua/lcars/frame_buffer.lua"
+  "nvim/lua/lcars/pty_session.lua     $CONFIG/nvim/lua/lcars/pty_session.lua"
   "nvim/lua/lualine/themes/lcars.lua $CONFIG/nvim/lua/lualine/themes/lcars.lua"
   ".claude/hooks/kitty-tab-alert.sh  $HOME/.claude/hooks/kitty-tab-alert.sh"
 )

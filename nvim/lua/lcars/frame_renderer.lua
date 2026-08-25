@@ -272,6 +272,58 @@ function M.render_footer(buf, row, rec, opts)
   return 1
 end
 
+-- clear_images: clear cached image keys for a block so place_images can re-place
+-- with a different state color (e.g. after transitioning from live → done/failed).
+function M.clear_images(buf, start_row, opts)
+  opts = opts or {}
+  local pfx = (opts.image_key_prefix or tostring(buf) .. "_" .. tostring(start_row)) .. "_"
+  registry.clear_key(pfx .. "elbow_top")
+  registry.clear_key(pfx .. "vcap_top")
+  registry.clear_key(pfx .. "felbow_bot")
+  registry.clear_key(pfx .. "fcap_right")
+end
+
+-- place_images: place elbow/cap Kitty images for a block.
+--   start_row: first row of the header.
+--   footer_row: the footer row (ignored when rec.state == "live").
+--   Requires opts.win (or falls back to current win) and cw/ch from opts or registry.
+function M.place_images(buf, start_row, footer_row, rec, opts)
+  opts = opts or {}
+  local cw = opts.cw or registry.current_cw
+  local ch = opts.ch or registry.current_ch
+  if not (cw and ch) then return end
+
+  local win = opts.win or vim.api.nvim_get_current_win()
+  local wi  = vim.fn.getwininfo(win)[1]
+  if not wi then return end
+
+  local win_row = wi.winrow - 1
+  local win_col = wi.wincol - 1
+  local topline = vim.fn.line("w0", win) - 1
+  local lp      = opts.lp or 6
+  local bw      = opts.bw or 60
+  local dir     = assets.find_asset_dir(cw, ch)
+  local pfx     = (opts.image_key_prefix or tostring(buf) .. "_" .. tostring(start_row)) .. "_"
+  local color   = STATE_COLOR[rec.state] or STATE_COLOR.done
+
+  place(pfx .. "elbow_top",
+    elbow_path(dir, cw, ch, "top", "left", color),
+    win_col, win_row, topline, start_row, lp, ELBOW_W, ELBOW_H)
+  place(pfx .. "vcap_top",
+    vcap_path(dir, cw, ch, "right", color),
+    win_col, win_row, topline, start_row, lp + bw - CAP_W, CAP_W, 2)
+
+  if rec.state ~= "live" then
+    -- elbow placed 1 row above footer so fillet occupies last content row
+    place(pfx .. "felbow_bot",
+      felbow_path(dir, cw, ch, color),
+      win_col, win_row, topline, footer_row - 1, lp, FELBOW_W, FELBOW_H)
+    place(pfx .. "fcap_right",
+      fcap_path(dir, cw, ch, color),
+      win_col, win_row, topline, footer_row, lp + bw - FCAP_W, FCAP_W, 1)
+  end
+end
+
 -- render_block: header(3) + content(N) + footer(1 or 0 for live) = N+4 or N+3 rows.
 function M.render_block(buf, start_row, rec, opts)
   opts = opts or {}
@@ -284,42 +336,8 @@ function M.render_block(buf, start_row, rec, opts)
     row = row + M.render_footer(buf, row, rec, opts)
   end
 
-  -- Place elbow + vcap images when cell dimensions are known.
-  local cw = opts.cw or registry.current_cw
-  local ch = opts.ch or registry.current_ch
-  if cw and ch then
-    local win = opts.win or vim.api.nvim_get_current_win()
-    local wi  = vim.fn.getwininfo(win)[1]
-    if wi then
-      local win_row = wi.winrow - 1
-      local win_col = wi.wincol - 1
-      local topline = vim.fn.line("w0", win) - 1
-      local lp      = opts.lp or 6
-      local bw      = opts.bw or 60
-      local dir     = assets.find_asset_dir(cw, ch)
-      local pfx     = (opts.image_key_prefix or tostring(buf) .. "_" .. tostring(start_row)) .. "_"
-      local color   = STATE_COLOR[rec.state] or STATE_COLOR.done
-
-      -- Top elbow + vcap (all states — colored assets now exist for sage/red)
-      place(pfx .. "elbow_top",
-        elbow_path(dir, cw, ch, "top", "left", color),
-        win_col, win_row, topline, start_row, lp, ELBOW_W, ELBOW_H)
-      place(pfx .. "vcap_top",
-        vcap_path(dir, cw, ch, "right", color),
-        win_col, win_row, topline, start_row, lp + bw - CAP_W, CAP_W, 2)
-
-      if rec.state ~= "live" then
-        local footer_row = row - 1
-        -- elbow placed 1 row above footer so fillet occupies last content row
-        place(pfx .. "felbow_bot",
-          felbow_path(dir, cw, ch, color),
-          win_col, win_row, topline, footer_row - 1, lp, FELBOW_W, FELBOW_H)
-        place(pfx .. "fcap_right",
-          fcap_path(dir, cw, ch, color),
-          win_col, win_row, topline, footer_row, lp + bw - FCAP_W, FCAP_W, 1)
-      end
-    end
-  end
+  local footer_row = rec.state ~= "live" and (row - 1) or nil
+  M.place_images(buf, start_row, footer_row, rec, opts)
 
   return row - start_row
 end
