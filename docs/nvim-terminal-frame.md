@@ -51,17 +51,20 @@ OSC 133 marks (emitted by kitty shell integration) drive the block lifecycle:
 
 ```
 A (prompt start)
-  → create block_record, render header in sage (live)
+  → create block_record, render header in sage (live) via frame_buffer.open_block
 
 B (command start)
-  → record command text from PTY bytes until C
+  → note: command text comes from term_input.submit(), NOT from PTY bytes
+  → pty_session suppresses echoed input lines between B and C (skip_lines=true)
 
 C (command exec)
-  → open content region; start appending output lines
+  → open content region; start appending output lines via frame_buffer.append_line
+  → record rec.command_start = vim.uv.hrtime()
 
 D;N (command done, exit code N)
-  → finalize: re-render header in periwinkle (N=0) or red (N≠0)
-  → write footer hcap line
+  → record rec.command_end, rec.duration = command_end - command_start
+  → set rec.state = (N==0) and "done" or "failed", rec.exit_code = N
+  → frame_buffer.close_block(rec) — re-renders header, writes 1-row footer
 ```
 
 State → chrome color:
@@ -89,6 +92,63 @@ State → chrome color:
 Reuse from `block_demo.lua`: `chips_block()` pattern, `capcols()` math, chip/bar
 highlight logic. Do not delete `block_demo.lua` — it is the visual reference and
 is removed only from `deploy.sh`.
+
+---
+
+## Wiring notes for terminal_win.lua (lcarcat-2z9)
+
+`terminal_win.lua` connects the three completed layers. Key contract details:
+
+**pty_session callbacks → frame_buffer calls:**
+
+```lua
+local rec = nil  -- current live block_record
+
+callbacks = {
+  on_prompt_start = function()
+    rec = block_record.new(next_id())
+    rec.state = "live"
+    -- cwd set by on_cwd if OSC 7 fires before A, or left nil
+    fb.open_block(rec)
+  end,
+
+  on_command_start = function()
+    -- command text not available here; set after term_input.submit() fires
+    -- pty_session is suppressing echoed input (skip_lines=true)
+  end,
+
+  on_command_exec = function()
+    -- rec.command was set by terminal_win before calling pty_session.send()
+    rec.command_start = vim.uv.hrtime() / 1e9  -- epoch seconds
+  end,
+
+  on_output_line = function(line)
+    if rec then fb.append_line(rec, line) end
+  end,
+
+  on_command_done = function(exit_code)
+    rec.command_end = vim.uv.hrtime() / 1e9
+    rec.duration    = rec.command_end - rec.command_start
+    rec.state       = (exit_code == 0) and "done" or "failed"
+    rec.exit_code   = exit_code
+    fb.close_block(rec)
+    rec = nil
+  end,
+
+  on_cwd = function(path)
+    if rec then rec.cwd = path end
+  end,
+}
+```
+
+**Command submission flow** (term_input.submit → terminal_win → pty_session):
+1. `term_input.submit()` reads the nvim buffer contents → calls `terminal_win.submit(cmd_text)`
+2. `terminal_win.submit` sets `rec.command = cmd_text` on the current (live) `block_record`
+3. Then calls `pty_session.send(cmd_text)` — PTY executes it
+
+**Window layout:** Display buffer in top split (`modifiable=false`, `signcolumn=no`). Input split below (fixed height, `signcolumn=yes:1` for orange stem). Pass actual window `width` and `height` to `pty_session.start()` via `opts`.
+
+**opts for frame_buffer.new():** Pass `win`, `cw`, `ch` from the display split so images are placed correctly from the start. `cw`/`ch` from `require("lcars.assets").cell_px()`.
 
 ---
 

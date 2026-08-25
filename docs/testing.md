@@ -1,6 +1,34 @@
-# Visual Testing
+# Testing
 
-lcarcat has no unit tests. All testing is visual/screenshot-based. This document covers the harness, scenarios, pixel analysis tools, and cell-grid color readers.
+lcarcat has two complementary test layers:
+
+- **Headless unit tests** (`test/unit/`) — pure-Lua logic tests, no nvim display, no kitty required. Fast, deterministic, CI-runnable. Currently cover `pty_session._parse_chunk`.
+- **Visual / screenshot tests** — kitty-harness-driven capture scripts and integration tests. Required for anything involving nvim rendering, image placement, or terminal interaction.
+
+This document covers both layers.
+
+---
+
+## Headless unit tests
+
+### test/unit/run_parser_tests.sh
+
+Tests `lcars.pty_session._parse_chunk` — the pure OSC 133 parser and carry-buffer logic.
+
+```bash
+bash test/unit/run_parser_tests.sh
+```
+
+Runs under `nvim --headless -u NONE`. No kitty, no display, no plugin dependencies. Exit 0 = all pass.
+
+**Test convention** (pattern for future headless tests):
+- Minimal pure-Lua runner in `test/unit/<module>_test.lua` — no busted or plenary.
+- Call `vim.cmd("cq 1")` on any failure so nvim exits nonzero.
+- Expose the function under test as `M._function_name` in the module (Lua convention for semi-private testable functions).
+
+---
+
+## Visual testing
 
 ---
 
@@ -261,6 +289,7 @@ These produce PNGs in `test/screenshots/<name>/` but have no programmatic assert
 | Script | What it captures |
 |--------|-----------------|
 | `block_demo.sh` | LCARS block frame styles in a scratch buffer |
+| `frame_buffer.sh` | frame_buffer lifecycle: done/live/failed blocks via open_block→append_line→close_block |
 | `cmd_buffer_theme.sh` | Orange gutter in command buffer; periwinkle above |
 | `prompt_elbow_alignment.sh` | Elbow image aligned with stem bg cell |
 | `prompt_left_edge_pixel.sh` | Sub-pixel left edge (feed to `analyze_left_edge.py`) |
