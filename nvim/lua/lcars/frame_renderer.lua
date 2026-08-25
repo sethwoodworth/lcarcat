@@ -9,7 +9,7 @@
 -- Geometry mirrors block_demo.lua make_A exactly:
 --   Header (3 rows):  h0=bar, h0+1=bar+chips, h0+2=stem-stub+cmd
 --   Content (N rows): one per rec.lines, left stem
---   Footer (3 rows):  f0=stub, f0+1=bar, f0+2=bar  (omitted for live)
+--   Footer (1 row):   f0=bar with left+right round caps (omitted for live)
 --
 -- Highlight groups (state → color):
 --   live   → LcarsTermFrameLive  (sage)  / LcarsTermStemLive  (sage)
@@ -68,6 +68,21 @@ local function vcap_path(dir, cw, ch, facing, color)
          .. "-" .. CAP_W .. "x2cells-" .. cw .. "x" .. ch .. "pixels.png"
 end
 
+-- footer elbow: 5 wide × 2 tall (bar_rows=1 + stem_rows=1), placed 1 row up into content
+-- so the inner fillet is visible, while only the bottom bar row is the footer row.
+local FELBOW_W, FELBOW_H = 5, 2
+local function felbow_path(dir, cw, ch, color)
+  return dir .. "/elbow-bottom-left-" .. color
+         .. "-" .. FELBOW_W .. "x" .. FELBOW_H .. "cells-" .. cw .. "x" .. ch .. "pixels.png"
+end
+
+-- footer right cap: 1 wide × 1 tall
+local FCAP_W = 1
+local function fcap_path(dir, cw, ch, color)
+  return dir .. "/cap-round-right-" .. color
+         .. "-" .. FCAP_W .. "x1cells-" .. cw .. "x" .. ch .. "pixels.png"
+end
+
 -- ── low-level extmark helpers ─────────────────────────────────────────────
 
 -- Byte-based hl_group extmark. c0/c1 are window cols; subtract GUTTER_W for buffer byte cols.
@@ -101,36 +116,59 @@ local function stem_rows(buf, ns, r0, count, x, group)
   end
 end
 
--- chips_block mirrors block_demo exactly. col is a window col.
-local function chips_block(buf, ns, r_top, r_text, col, chip_list)
-  local function gap_at(row, pos)
+-- chips_block: right-aligned chips placed from cap_x leftward.
+-- chip_list entries: { label, hl_group }.
+-- cwd (string|nil): rightmost "hole" chip — blank top row, Normal text bottom row.
+--
+-- Layout right-to-left from cap_x:
+--   [2 bar cols][hole chip][1 bar col][1 black][chip_n][black]...[black][chip_1][black]
+--
+-- Colored chips have 1-col black gaps before, after, and between them.
+-- The hole chip is separated from the colored chips by 1 black col + 1 bar-color col.
+-- 2 bg columns are always reserved before the cap (pre-cap buffer rule).
+local function chips_block(buf, ns, r_top, r_text, cap_x, chip_list, cwd, fhl)
+  local function overlay(row, pos, text, group)
     vim.api.nvim_buf_set_extmark(buf, ns, row, 0, {
-      virt_text         = {{ " ", "Normal" }},
+      virt_text         = {{ text, group }},
       virt_text_pos     = "overlay",
       virt_text_win_col = pos,
       priority          = HL_PRI,
     })
   end
-  gap_at(r_top, col); gap_at(r_text, col)
-  local c = col + 1
-  for _, chip in ipairs(chip_list) do
+  local function black(row, pos)
+    overlay(row, pos, " ", "Normal")
+  end
+
+  local c = cap_x - 2  -- pre-cap buffer: 2 bare bar cols
+
+  -- Hole chip (rightmost)
+  if cwd and cwd ~= "" then
+    local label = " " .. cwd .. " "
+    local blank  = string.rep(" ", #label)
+    c = c - #label
+    overlay(r_top,  c, blank, "Normal")
+    overlay(r_text, c, label, "Normal")
+    -- Separator: 1 bar-color col (implicit — barrow already colors it) + 1 black col
+    if #chip_list > 0 then
+      c = c - 1  -- bar-color col: no overlay needed, barrow provides it
+      c = c - 1
+      black(r_top, c); black(r_text, c)
+    end
+  end
+
+  -- Colored chips right-to-left: [chip][black] ... [black][chip][black]
+  -- The gap to the right of the rightmost colored chip was already placed above (or is the
+  -- bar fill when there's no hole chip — handled by placing a black gap after each chip).
+  for i = #chip_list, 1, -1 do
+    local chip  = chip_list[i]
     local label = " " .. chip[1] .. " "
     local blank = string.rep(" ", #label)
-    vim.api.nvim_buf_set_extmark(buf, ns, r_top, 0, {
-      virt_text         = {{ blank, chip[2] }},
-      virt_text_pos     = "overlay",
-      virt_text_win_col = c,
-      priority          = HL_PRI,
-    })
-    vim.api.nvim_buf_set_extmark(buf, ns, r_text, 0, {
-      virt_text         = {{ label, chip[2] }},
-      virt_text_pos     = "overlay",
-      virt_text_win_col = c,
-      priority          = HL_PRI,
-    })
-    c = c + #label
-    gap_at(r_top, c); gap_at(r_text, c)
-    c = c + 1
+    c = c - #label
+    overlay(r_top,  c, blank, chip[2])
+    overlay(r_text, c, label, chip[2])
+    -- black gap to the left of this chip (before next chip, or trailing before bar fill)
+    c = c - 1
+    black(r_top, c); black(r_text, c)
   end
 end
 
@@ -176,8 +214,8 @@ function M.render_header(buf, row, rec, opts)
   barrow(buf, ns, row,     bar_x0, bar_w, fhl)
   barrow(buf, ns, row + 1, bar_x0, bar_w, fhl)
 
-  if rec.chips and #rec.chips > 0 then
-    chips_block(buf, ns, row, row + 1, bar_x0, rec.chips)
+  if (rec.chips and #rec.chips > 0) or (rec.cwd and rec.cwd ~= "") then
+    chips_block(buf, ns, row, row + 1, cap_x, rec.chips, rec.cwd, fhl)
   end
 
   -- Stem stub on row+2
@@ -212,38 +250,29 @@ function M.render_content(buf, row, rec, opts)
   return #out
 end
 
--- render_footer: 3 rows (mirrors make_A footer geometry).
---   f0+0: stem stub (elbow image row 0)
---   f0+1: bar fill  (elbow image row 1)
---   f0+2: bar fill  (elbow image row 2)
+-- render_footer: 1 row — bottom-left elbow image + bar fill + right round cap.
+--   f0: [elbow image at lp..lp+FELBOW_W-1][bar fill][right cap at bw-FCAP_W]
 function M.render_footer(buf, row, rec, opts)
   local ns  = opts.ns or ns_default
   local lp  = opts.lp or 6
   local bw  = opts.bw or 60
 
   vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, row, row + 3, false, {
-    pad(lp) .. bar(bw),
-    pad(lp) .. bar(bw),
+  vim.api.nvim_buf_set_lines(buf, row, row + 1, false, {
     pad(lp) .. bar(bw),
   })
   vim.bo[buf].modifiable = false
 
-  local fhl = frame_hl(rec.state)
-  local shl = stem_hl(rec.state)
-
-  hl(buf, ns, shl, row, lp, lp + STEM_W)  -- stub on f0
-
-  local bar_x0 = lp + ELBOW_W - 1
-  local cap_x  = lp + bw - CAP_W
+  local fhl   = frame_hl(rec.state)
+  local bar_x0 = lp + FELBOW_W - 1  -- overlap elbow by 1 col (mirrors header)
+  local cap_x  = lp + bw - FCAP_W
   local bar_w  = cap_x - bar_x0
-  barrow(buf, ns, row + 1, bar_x0, bar_w, fhl)
-  barrow(buf, ns, row + 2, bar_x0, bar_w, fhl)
+  barrow(buf, ns, row, bar_x0, bar_w, fhl)
 
-  return 3
+  return 1
 end
 
--- render_block: header(3) + content(N) + footer(3 or 0 for live) = N+6 or N+3 rows.
+-- render_block: header(3) + content(N) + footer(1 or 0 for live) = N+4 or N+3 rows.
 function M.render_block(buf, start_row, rec, opts)
   opts = opts or {}
   local row = start_row
@@ -280,13 +309,14 @@ function M.render_block(buf, start_row, rec, opts)
         win_col, win_row, topline, start_row, lp + bw - CAP_W, CAP_W, 2)
 
       if rec.state ~= "live" then
-        local footer_row = row - 3
-        place(pfx .. "elbow_bot",
-          elbow_path(dir, cw, ch, "bottom", "left", color),
-          win_col, win_row, topline, footer_row, lp, ELBOW_W, ELBOW_H)
-        place(pfx .. "vcap_bot",
-          vcap_path(dir, cw, ch, "right", color),
-          win_col, win_row, topline, footer_row + 1, lp + bw - CAP_W, CAP_W, 2)
+        local footer_row = row - 1
+        -- elbow placed 1 row above footer so fillet occupies last content row
+        place(pfx .. "felbow_bot",
+          felbow_path(dir, cw, ch, color),
+          win_col, win_row, topline, footer_row - 1, lp, FELBOW_W, FELBOW_H)
+        place(pfx .. "fcap_right",
+          fcap_path(dir, cw, ch, color),
+          win_col, win_row, topline, footer_row, lp + bw - FCAP_W, FCAP_W, 1)
       end
     end
   end

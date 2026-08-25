@@ -46,15 +46,20 @@ The L-corner where a horizontal bar turns into a vertical stem. Two variants: **
 The **elbow** image is 3 rows tall (bar 2 + stem 1) and contains the rounded outer corner plus the inner concave fillet. The stem continues below as a background cell (via `PROMPT2`).
 
 ### cap
-The right half-round end of a bar — punctuation, like a period. Only at bar termination points, never mid-bar. The prompt places 2 bar-color cells before the cap so the round end reads as a continuation of the bar.
+The right half-round end of a bar — punctuation, like a period. Only at bar termination points, never mid-bar. There must always be at least 2 bar-color cells immediately before the cap — a visual breathing gap that lets the round end read as a natural continuation of the bar rather than a blob stuck to the last chip. Chips, notches, and text must never run up to the cap's left edge.
 
-### chip (Style A vs Style B)
+### chip (Style A vs Style B vs hole)
 
 **Style A — notch chip**: label in the bar's own accent color, cut into a black notch. Only at the far right of a bar. Introduced by `[1-col black rule][1-col accent][black notch: words]`.
 
-**Style B — color chip**: solid colored segment (different accent than the bar) with dark/black label. Chips of different accents sit side by side separated by combed 1-col black gaps.
+**Style B — color chip**: solid colored segment (different accent than the bar) with dark/black label. Chips of different accents sit side by side separated by combed 1-col black gaps. Each colored chip is preceded and followed by a 1-col black gap — the gaps are explicit black cells, not bar fill.
 
-Text alignment: right-aligned horizontally; generally on the bottom row of the 2-row bar.
+**Hole chip**: the bar color shows through with no fill change; only the label text is present. Used for ambient context (e.g. working directory) that should be readable but not visually assertive. Layout rules:
+- Rightmost chip, always. Separated from the last colored chip by `[1 black][1 bar-color]` (two cols of separation, only the left one is explicitly black).
+- Spans the full height of the bar: blank top row, label text on bottom row — matching the height of colored chips.
+- No gap is placed after the hole chip; the 2-col pre-cap buffer follows it directly.
+
+Text alignment: chips are right-aligned as a group; generally label text is on the bottom row of the 2-row bar.
 
 ---
 
@@ -77,16 +82,19 @@ Consequence: "an elbow at every window corner" is wrong for nvim — interior wi
 ### 5. Caps are termination points
 A rounded cap marks the end of a bar — punctuation, like a period. Caps belong only at bar termination points, never mid-bar.
 
-### 6. Two spacing constants
+### 6. Pre-cap buffer columns
+At least 2 bar-color columns must precede every cap. Chips, notches, and text must stop no closer than 3 cols from the cap's left edge (2 bg cols + the cap itself). This applies to header bars, footer bars, and split-separator bars.
+
+### 7. Two spacing constants
 All elements align to one of two grid values: Main Frame Spacing and Frame Spacing. Breaking the grid produces the "disjointed amateur LCARS" look.
 
-### 7. Three font sizes only
+### 8. Three font sizes only
 Main Title, Sub Header, Normal Data. No mixing beyond these three. All chrome text is ALL-CAPS (this is flexible on implementation).
 
-### 8. Color discipline
+### 9. Color discipline
 Maximum ~5 colors, each semantically assigned. Every color means something specific — no decorative variation. See `docs/palette.md`.
 
-### 9. Input vs display panel semantics
+### 10. Input vs display panel semantics
 - **Input panels** (user types): orange structural color
 - **Display panels** (read-only, status, output): periwinkle structural color
 - Active split border: orange; inactive: muted periwinkle

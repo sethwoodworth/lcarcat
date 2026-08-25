@@ -262,14 +262,24 @@ def main():
                                    a.elbow_cols, a.stem_rows, a.cellw, a.cellh, flip,
                                    mirror=True))
 
-    # Round vertical bar caps (right-facing default, left-facing mirror).
-    cap_cols = round_cap_cols(2, a.cellw, a.cellh)
-    for facing, mirror in (("right", False), ("left", True)):
-        name = asset_name("cap", chex, cap_cols, 2, a.cellw, a.cellh,
-                          orient="round", facing=facing)
-        path, cols = make_cap(os.path.join(a.outdir, name), color, 2,
-                              a.cellw, a.cellh, mirror=mirror)
-        print(f"wrote: {path}  (cap width = {cols} cols)")
+    # 1-row footer elbow (bar_rows=1, stem_rows=1 = 2 rows total): bottom-left only.
+    # The extra stem row provides the inner concave fillet; it overlaps 1 row into content.
+    for orient, flip in (("bottom", True),):
+        name = asset_name("elbow", chex, a.elbow_cols, 2,
+                          a.cellw, a.cellh, orient=orient, facing="left")
+        print("wrote:", make_swoop(os.path.join(a.outdir, name), color,
+                                   a.elbow_cols, 1, a.cellw, a.cellh, flip,
+                                   bar_rows=1))
+
+    # Round vertical bar caps — 2-row (header/top) and 1-row (footer).
+    for cap_rows in (2, 1):
+        cap_cols = round_cap_cols(cap_rows, a.cellw, a.cellh)
+        for facing, mirror in (("right", False), ("left", True)):
+            name = asset_name("cap", chex, cap_cols, cap_rows, a.cellw, a.cellh,
+                              orient="round", facing=facing)
+            path, cols = make_cap(os.path.join(a.outdir, name), color, cap_rows,
+                                  a.cellw, a.cellh, mirror=mirror)
+            print(f"wrote: {path}  (cap width = {cols} cols)")
 
     # Corner elbow for the nvim chrome: a short bar (default 1 row) whose left end
     # rounds down into a wide stem (= number-gutter width). Width = stem + 2 cols so

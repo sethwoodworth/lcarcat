@@ -50,19 +50,35 @@ When a screenshot was taken with `LCARCAT_DEBUG_BG=1` (or `:LcarsBlockDemoDebugB
 
 In debug mode, the inspection question shifts: rather than "is the image present?", ask "does the purple/teal boundary match the expected highlight geometry?" Bleed is visible as the wrong color appearing in the wrong region (e.g., purple in a cap cell means bar extmark overruns into the cap).
 
+## LCARS frame shape reference — know before you judge
+
+**Header (top of block):** A top-left elbow image occupies `lp..lp+ELBOW_W` (cols 6–10), `ELBOW_H=3` rows tall. It has an **outer convex rounded corner** at the top-left and an **inner concave fillet** where the bar meets the stem below it. The bar extends right; a 2-tall right round cap sits at the far right. The stem descends below the elbow as a 1-col-wide colored strip.
+
+**Footer (bottom of block):** A bottom-left elbow image occupies `lp..lp+ELBOW_W` (cols 6–10), `ELBOW_H=3` rows tall (or 1 row for a single-row footer variant). It has an **outer convex rounded corner at the bottom-left** and an **inner concave fillet** where the bar meets the stem above it. The bar extends right; a right round cap closes the right end. There is NO left-side semicircle — that would mean a cap was placed where an elbow should be.
+
+**Correct vs. wrong at the bottom-left corner:**
+- CORRECT: outer convex arc curving from bottom edge up to left edge (elbow shape, like a TV-corner) + inner concave notch where bar floor meets stem right edge.
+- WRONG: a D-shaped or C-shaped half-circle facing right (a round cap) — this looks like a bullet or blob on the left end of the bar, not an LCARS corner.
+
+If the bottom-left of a footer bar shows a half-circle/semicircle shape rather than a convex corner with a concave fillet — that is a misplaced cap, not an elbow. Flag it as "cap placed instead of elbow."
+
 ## LCARS common failure modes — always check these with crop_grid.py
 
 When reviewing any frame_renderer or block_demo screenshot, unconditionally run these crops before answering, even if the parent didn't ask for them:
 
-1. **Elbow zone artifact** — periwinkle bleed behind a non-periwinkle bar.
+1. **Elbow zone shape** — is the bottom-left corner an elbow (convex outer corner + concave fillet) or a cap (semicircle)?
+   Crop cols `lp` to `lp+ELBOW_W+1` (typically cols 6–12), all footer bar rows.
+   A semicircle here means a cap was placed where an elbow belongs — report "WRONG: cap at footer left."
+
+2. **Elbow zone artifact** — periwinkle bleed behind a non-periwinkle bar.
    Crop cols `lp` to `lp+ELBOW_W+1` (typically cols 6–12), all header bar rows of each block.
    Report every distinct color you see in that zone per block.
 
-2. **Bar overrun past right cap** — bar highlight covering the cap cells.
+3. **Bar overrun past right cap** — bar highlight covering the cap cells.
    Crop the rightmost 4 cols of each header and footer bar row.
    Report whether the cap cells are bar-colored or default (black) bg.
 
-3. **State color fidelity** — bar, stem, elbow, and cap all matching for each block.
+4. **State color fidelity** — bar, stem, elbow, and cap all matching for each block.
    Crop the left 12 cols and right 4 cols of one bar row per block.
    Report the distinct colors seen. Any periwinkle on a live or failed block is a defect.
 

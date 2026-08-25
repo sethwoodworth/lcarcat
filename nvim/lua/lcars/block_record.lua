@@ -6,6 +6,7 @@ function M.new(id)
     state         = "live",  -- "live"|"done"|"failed"|"folded"
     command       = "",
     chips         = {},
+    cwd           = nil,       -- working directory at command start (string|nil)
     lines         = {},
     exit_code     = nil,
     command_start = nil,     -- epoch seconds (from pre-exec hook)

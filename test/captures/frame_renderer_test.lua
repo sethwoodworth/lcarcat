@@ -40,6 +40,7 @@ local rec1 = br.new(1)
 rec1.state = 'done'
 rec1.command = 'tree ~/code/lcarcat'
 rec1.chips = { { 'main', 'LcarsBlockChipGo' }, { '~/code', 'LcarsBlockChipSk' } }
+rec1.cwd = '~/code/lcarcat'
 rec1.lines = { '.', '├── nvim/', '│   └── lua/lcars/', '└── deploy.sh' }
 rec1.command_start = 1000; rec1.command_end = 1002; rec1.duration = 2.0
 opts.image_key_prefix = 'done'
@@ -49,6 +50,7 @@ local rec2 = br.new(2)
 rec2.state = 'live'
 rec2.command = 'ping 8.8.8.8'
 rec2.chips = { { 'main', 'LcarsBlockChipGo' } }
+rec2.cwd = '~/code/lcarcat/nvim'
 rec2.lines = { 'PING 8.8.8.8: 56 data bytes', '64 bytes icmp_seq=0 ttl=118 time=12.4 ms' }
 opts.image_key_prefix = 'live'
 local r2 = fr.render_block(buf, 2 + r1 + 1, rec2, opts)
@@ -57,6 +59,7 @@ local rec3 = br.new(3)
 rec3.state = 'failed'
 rec3.command = 'npm test'
 rec3.chips = { { 'feat/fix', 'LcarsBlockChipSk' } }
+rec3.cwd = '~/code/lcarcat'
 rec3.lines = { '> jest --runInBand', 'FAIL src/index.test.js', '  ● test suite failed' }
 rec3.command_start = 1000; rec3.command_end = 1003; rec3.duration = 3.1
 opts.image_key_prefix = 'failed'
