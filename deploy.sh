@@ -53,6 +53,7 @@ mappings=(
   "nvim/lua/lcars/frame_buffer.lua    $CONFIG/nvim/lua/lcars/frame_buffer.lua"
   "nvim/lua/lcars/pty_session.lua     $CONFIG/nvim/lua/lcars/pty_session.lua"
   "nvim/lua/lcars/term_input.lua      $CONFIG/nvim/lua/lcars/term_input.lua"
+  "nvim/lua/lcars/terminal_win.lua    $CONFIG/nvim/lua/lcars/terminal_win.lua"
   "nvim/lua/lualine/themes/lcars.lua $CONFIG/nvim/lua/lualine/themes/lcars.lua"
   ".claude/hooks/kitty-tab-alert.sh  $HOME/.claude/hooks/kitty-tab-alert.sh"
 )

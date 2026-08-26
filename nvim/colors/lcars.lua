@@ -16,6 +16,22 @@ vim.o.background = "dark"
 vim.o.termguicolors = true
 vim.g.colors_name = "lcars"
 
+-- Terminal 16-color palette (matches kitty/lcars.conf color0-15 by hand — see
+-- lua/lcars/palette.lua's header comment). baleia.nvim (used by
+-- lcars.frame_buffer to render PTY output) reads vim.g.terminal_color_N
+-- before falling back to its own generic default theme; without this, ANSI
+-- colors inside :LcarsTerm (e.g. `ls`'s directory blue) don't match what the
+-- same command shows in a real kitty pane and can be unreadably dark.
+local terminal_colors = {
+  "#000000", "#cc6666", "#88bb88", "#cc9966",
+  "#9966ff", "#cc6699", "#99ccff", "#ffcc99",
+  "#666699", "#ff3300", "#99cc99", "#ffcc66",
+  "#9999ff", "#cc99cc", "#cceeff", "#ccccff",
+}
+for i, hex in ipairs(terminal_colors) do
+  vim.g["terminal_color_" .. (i - 1)] = hex
+end
+
 local p = require("lcars.palette")
 
 local function hi(group, spec)
@@ -56,6 +72,7 @@ vim.opt.fillchars:append({ eob = " " })
 vim.opt.statuscolumn = "%#LineNr#%=%l%#LineNr# "
 require("lcars.gutter_eob_fill").setup()
 require("lcars.terminal_frame")
+require("lcars.terminal_win")
 require("lcars.spike_placeholder")
 require("lcars.spike_baleia")
 hi("Visual",        { fg = p.bg, bg = p.periwinkle })
