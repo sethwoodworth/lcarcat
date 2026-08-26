@@ -85,6 +85,7 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Work on colors or the palette | [`docs/palette.md`](palette.md) |
 | Run or write screenshot tests | [`docs/testing.md`](testing.md) |
 | Drive nvim via kitty socket (tab nav, messages, image timing) | [`docs/nvim-harness.md`](nvim-harness.md) |
+| Debug image.nvim placement/scroll quirks (buffer-bound images, off-by-one rows, horizontal scroll) | [`docs/nvim-harness.md`](nvim-harness.md) |
 | Deploy changes to ~/.config | [`docs/deployment.md`](deployment.md) |
 | Make design or layout decisions | [`docs/lcars-design.md`](lcars-design.md) |
 | Use or define terms for shell/terminal structure (block, frame, stem, header, footer, rail, gap) | [`docs/terminal-block-terminology.md`](terminal-block-terminology.md) |

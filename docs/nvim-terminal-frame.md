@@ -25,15 +25,27 @@ viable for linear output (ls, git) but "when is a line settled" is ambiguous for
 line-rewriting commands (htop, watch). See spike-3 bead `lcarcat-xi4` for the
 investigation task. Default path: custom buffer + baleia.
 
-## Why Unicode placeholder images, not absolute placement
+## Why images are bound to (window, buffer, row), not absolute placement
 
 `chrome.lua` and `terminal_frame.lua` place images at absolute screen
 coordinates via image.nvim — they must be repositioned on every scroll event.
 The zsh prompt instead uses the kitty Unicode placeholder protocol: `U+10EEEE`
 + row/col combining diacritics are emitted as real text cells that live in the
-buffer. Because they are text, they scroll automatically. The terminal frame
-uses the same approach for all header/footer images — elbow and hcap PNG cells
-are part of the synthetic header/footer lines, not floats.
+buffer, so they scroll automatically because they *are* text.
+
+The terminal frame doesn't use literal Unicode placeholder cells for its
+elbow/cap images (that would mean redrawing the PNG-as-glyph pipeline the zsh
+prompt uses). Instead `image_registry.lua`/`frame_renderer.lua` pass
+`window`/`buffer` plus buffer-relative `x`/`y` to image.nvim's `from_file()`.
+That gets the same property — images move and disappear with the buffer, not
+the screen — because image.nvim's own internal autocmds (`WinScrolled`,
+`BufLeave`/`WinClosed`/`TabEnter`) reposition and hide window+buffer-bound
+images automatically; no reconciliation loop needed on our side. See
+`docs/nvim-harness.md` "Buffer-bound placement" for the mechanism and a
+known off-by-one gotcha in the installed image.nvim version (lcarcat-382).
+`chrome.lua` stays on absolute placement deliberately — its images are fixed
+chrome pinned to layout geometry, not buffer content, so there's no buffer
+row to bind to.
 
 ## Why `term_input.lua` is separate from `command_buffer.lua`
 

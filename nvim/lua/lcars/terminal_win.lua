@@ -48,9 +48,11 @@ function M.submit(cmd_text)
 end
 
 -- Tail the display window to the newest content, like a real terminal.
--- Images are a known exception (lcarcat-382): they're positioned from the
--- window's scroll offset at placement time and don't follow, so scrolling
--- more often surfaces that gap more often too — not fixed here.
+-- Images (elbow/cap PNGs from frame_renderer/image_registry) are bound to
+-- (window, buffer, buffer-row) via image.nvim's from_file() options, so
+-- image.nvim's own internal autocmds keep them in sync with scrolling and
+-- buffer switches automatically (lcarcat-382 — fixed at the placement
+-- layer, not here).
 local function scroll_display_to_end(fb)
   if not (state.display_win and vim.api.nvim_win_is_valid(state.display_win)) then return end
   local last = vim.api.nvim_buf_line_count(fb.buf)
@@ -162,6 +164,23 @@ function M.open()
     group    = group,
     pattern  = { tostring(display_win), tostring(input_win) },
     callback = on_win_closed,
+  })
+
+  -- Elbow/cap images don't follow horizontal scroll (only WinScrolled's
+  -- vertical repositioning is handled upstream), so pin leftcol at 0 to
+  -- keep the frame from ever scrolling sideways out from under them.
+  -- Long unwrapped output lines can still trigger a scroll attempt
+  -- (tracked separately for output-width handling); this just snaps it
+  -- back immediately.
+  vim.api.nvim_create_autocmd("WinScrolled", {
+    group    = group,
+    pattern  = { tostring(display_win) },
+    callback = function()
+      if not vim.api.nvim_win_is_valid(display_win) then return end
+      if vim.api.nvim_win_call(display_win, function() return vim.fn.winsaveview().leftcol end) ~= 0 then
+        vim.api.nvim_win_call(display_win, function() vim.fn.winrestview({ leftcol = 0 }) end)
+      end
+    end,
   })
 
   -- Real window geometry, not pty_session's 220x50 default, so the PTY

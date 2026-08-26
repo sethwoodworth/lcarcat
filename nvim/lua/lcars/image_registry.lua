@@ -7,7 +7,7 @@
 -- terminal_frame, and chrome all share a single ownership model.
 --
 -- API:
---   M.place(path, x, y, w, h, key) → handle | nil
+--   M.place(path, win, buf, x, y, w, h, key) → handle | nil
 --   M.clear_key(key)
 --   M.clear_all()
 --   M.reset()              -- clear_all + nil out current_cw/current_ch
@@ -23,17 +23,32 @@ M.current_ch = nil
 
 local cache = {}
 
--- Place a PNG at (x, y) with size (w × 1 rows) and cache by key.
+-- Place a PNG bound to (win, buf) at buffer-relative (x, y) with size
+-- (w × h) cells, and cache by key. image.nvim's own internal autocmds keep
+-- a window+buffer-bound image in sync with scrolling (WinScrolled) and
+-- buffer switches (BufLeave/WinClosed/TabEnter) — see docs/nvim-harness.md
+-- "Buffer-bound placement".
 -- Returns the image handle, or nil if the file is missing or image.nvim absent.
 -- Idempotent: returns the cached handle on subsequent calls for the same key.
-function M.place(path, x, y, w, h, key)
+function M.place(path, win, buf, x, y, w, h, key)
   if not ok_image then return nil end
   if cache[key] then return cache[key] end
   if vim.fn.filereadable(path) ~= 1 then
     vim.notify("lcars.image_registry: asset missing: " .. path, vim.log.levels.WARN)
     return nil
   end
-  local img = image.from_file(path, { x = x, y = y, width = w, height = h })
+  -- render_offset_top = -1 works around an off-by-one in the installed
+  -- image.nvim's window+buffer-bound renderer: its "on topline" and normal
+  -- (fully visible) branches assign absolute_y straight from a 1-indexed
+  -- screenpos()/winrow value without converting to the 0-indexed convention
+  -- the kitty backend expects (it does cursor_row = y + 1), so images land
+  -- one row below their bound buffer row. render_offset_top is skipped
+  -- during actual partial-scroll clipping, so it only corrects the two
+  -- branches that need it.
+  local img = image.from_file(path, {
+    window = win, buffer = buf, x = x, y = y, width = w, height = h,
+    render_offset_top = -1,
+  })
   if img then
     img.ignore_global_max_size = true
     img:render()

@@ -179,10 +179,8 @@ local function bar(w) return string.rep(" ", w) end
 
 -- ── image placement ───────────────────────────────────────────────────────
 
-local function place(key, path, win_col, win_row, topline, buf_row, buf_col, w, h)
-  local sy = win_row + buf_row - topline
-  local sx = win_col + buf_col
-  registry.place(path, sx, sy, w, h, key)
+local function place(key, path, win, buf, buf_row, buf_col, w, h)
+  registry.place(path, win, buf, buf_col - GUTTER_W, buf_row, w, h, key)
 end
 
 -- ── public render functions ───────────────────────────────────────────────
@@ -294,12 +292,8 @@ function M.place_images(buf, start_row, footer_row, rec, opts)
   if not (cw and ch) then return end
 
   local win = opts.win or vim.api.nvim_get_current_win()
-  local wi  = vim.fn.getwininfo(win)[1]
-  if not wi then return end
+  if not vim.api.nvim_win_is_valid(win) then return end
 
-  local win_row = wi.winrow - 1
-  local win_col = wi.wincol - 1
-  local topline = vim.fn.line("w0", win) - 1
   local lp      = opts.lp or 6
   local bw      = opts.bw or 60
   local dir     = assets.find_asset_dir(cw, ch)
@@ -308,19 +302,19 @@ function M.place_images(buf, start_row, footer_row, rec, opts)
 
   place(pfx .. "elbow_top",
     elbow_path(dir, cw, ch, "top", "left", color),
-    win_col, win_row, topline, start_row, lp, ELBOW_W, ELBOW_H)
+    win, buf, start_row, lp, ELBOW_W, ELBOW_H)
   place(pfx .. "vcap_top",
     vcap_path(dir, cw, ch, "right", color),
-    win_col, win_row, topline, start_row, lp + bw - CAP_W, CAP_W, 2)
+    win, buf, start_row, lp + bw - CAP_W, CAP_W, 2)
 
   if rec.state ~= "live" then
     -- elbow placed 1 row above footer so fillet occupies last content row
     place(pfx .. "felbow_bot",
       felbow_path(dir, cw, ch, color),
-      win_col, win_row, topline, footer_row - 1, lp, FELBOW_W, FELBOW_H)
+      win, buf, footer_row - 1, lp, FELBOW_W, FELBOW_H)
     place(pfx .. "fcap_right",
       fcap_path(dir, cw, ch, color),
-      win_col, win_row, topline, footer_row, lp + bw - FCAP_W, FCAP_W, 1)
+      win, buf, footer_row, lp + bw - FCAP_W, FCAP_W, 1)
   end
 end
 
