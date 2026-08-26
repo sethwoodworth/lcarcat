@@ -149,11 +149,15 @@ function M.open()
   vim.api.nvim_win_set_buf(input_win, input_buf)
   vim.api.nvim_buf_set_name(input_buf, "lcars://terminal_win/input")
 
+  local shell_cmd  = vim.env.SHELL or "/bin/zsh"
+  local shell_name = vim.fn.fnamemodify(shell_cmd, ":t")
+
   term_input.open(input_buf, {
     win        = input_win,
     on_submit  = M.submit,
     min_height = 4,
     max_height = 10,
+    filetype   = (shell_name == "zsh" or shell_name == "bash") and shell_name or "sh",
   })
 
   state.display_win = display_win
@@ -190,7 +194,7 @@ function M.open()
   local height = vim.api.nvim_win_get_height(display_win)
 
   pty_session.start(
-    vim.env.SHELL or "/bin/zsh",
+    shell_cmd,
     { width = width, height = height },
     make_callbacks(frame_buffer)
   )

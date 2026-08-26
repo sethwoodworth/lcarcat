@@ -1,7 +1,7 @@
 -- term_input.lua — orange-stem input panel that submits to a PTY session.
 --
 -- API:
---   M.open(buf, opts)   opts = { win, on_submit, min_height, max_height }
+--   M.open(buf, opts)   opts = { win, on_submit, min_height, max_height, filetype }
 --   M.submit()          reads buf, strips trailing blanks, calls on_submit(text), clears buf
 --   M.resize()          nvim_win_set_height(win, clamp(line_count, min_height, max_height))
 --   M.history_search()  Telescope picker over ~/.histfile, replaces buf with selection
@@ -156,6 +156,10 @@ function M.open(buf, opts)
   _on_submit  = opts.on_submit
   _min_height = opts.min_height or DEFAULT_MIN_HEIGHT
   _max_height = opts.max_height or DEFAULT_MAX_HEIGHT
+
+  if opts.filetype then
+    vim.bo[buf].filetype = opts.filetype
+  end
 
   _apply_highlights()
   vim.api.nvim_create_autocmd("ColorScheme", { buffer = buf, callback = _apply_highlights })
