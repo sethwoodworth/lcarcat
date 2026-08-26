@@ -309,16 +309,32 @@ _lcars_chips() {
 _lcars_swoop_preexec() {
   _LCARS_START=$EPOCHREALTIME
   _LCARS_CMD_RAN=1
-  _lcars_graphics_ok || return
-  # start line: [sky LED] STARDATE <astronomical Julian Day Number>  <UTC datetime>
-  local -i jdn=$(( EPOCHSECONDS / 86400 + 2440588 ))
-  local dt; TZ=UTC strftime -s dt '0%Y-%m-%dT%H:%M:%Sz' $EPOCHSECONDS
-  printf '\e[48;2;%sm \e[0m \e[38;2;%smSTARDATE %d  %s\e[0m\n' "$_LC_PERI" "$_LC_DIM" "$jdn" "$dt"
+  if _lcars_graphics_ok; then
+    # start line: [sky LED] STARDATE <astronomical Julian Day Number>  <UTC datetime>
+    local -i jdn=$(( EPOCHSECONDS / 86400 + 2440588 ))
+    local dt; TZ=UTC strftime -s dt '0%Y-%m-%dT%H:%M:%Sz' $EPOCHSECONDS
+    printf '\e[48;2;%sm \e[0m \e[38;2;%smSTARDATE %d  %s\e[0m\n' "$_LC_PERI" "$_LC_DIM" "$jdn" "$dt"
+  fi
+  # OSC 133;C (command_exec) for lcars.pty_session — see the precmd comment
+  # below for why this has to be *last*: it ends the skip_lines suppression
+  # window opened by precmd's trailing OSC 133;B, which is what keeps the
+  # STARDATE line above (and the prompt's own rendered bytes) out of the
+  # command's captured output.
+  printf '\e]133;C\e\\'
 }
 
 # ---- precmd ----------------------------------------------------------------
 _lcars_swoop_precmd() {
   local last_exit=$?
+
+  # OSC 133;D (command_done) for lcars.pty_session — emitted *before* any of
+  # this function's own decorative output (LED line, swoop bar) so that
+  # output streams out while no block is open (the previous one just closed
+  # at D, the next one doesn't open until A below); pty_session drops
+  # output_line callbacks with no live block, so this prompt's own chrome
+  # never lands in a rendered command's captured output. See
+  # docs/nvim-terminal-frame.md.
+  [[ -n $_LCARS_CMD_RAN ]] && printf '\e]133;D;%d\e\\' "$last_exit"
 
   # Re-probe cell size after a WINCH (font zoom / display change / SIGWINCH). If it
   # changed, _lcars_probe_cell_size clears _LCARS_IMAGES_SENT so _lcars_transmit_images
@@ -338,6 +354,14 @@ _lcars_swoop_precmd() {
     fi
     PROMPT="%F{#5599ff}%~%f ${gi:+%F{#ffcc66}$gi%f }${aw}"$'\n'"%K{#9999ff} %k "
     PROMPT2="%K{#9999ff} %k "
+    # OSC 133;A (prompt_start) + OSC 7 (cwd) + OSC 133;B (command_start).
+    # B goes last and un-gated by _lcars_graphics_ok: it opens the same
+    # skip_lines suppression window pty_session already uses for echoed
+    # input, which also swallows this PROMPT's own rendered bytes until
+    # preexec's closing OSC 133;C (see _lcars_swoop_preexec).
+    printf '\e]133;A\e\\'
+    printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD"
+    printf '\e]133;B\e\\'
     return
   fi
 
@@ -504,6 +528,15 @@ _lcars_swoop_precmd() {
   else
     PROMPT="  "; PROMPT2="  "
   fi
+
+  # OSC 133;A (prompt_start) + OSC 7 (cwd) + OSC 133;B (command_start) — see
+  # the comment on the D emission above. Emitted last (after the swoop bar
+  # has already streamed out with no block open) so the bar isn't captured
+  # as a command's output; B then suppresses the elbow-stem PROMPT bytes
+  # above the same way it suppresses echoed input, until preexec's OSC 133;C.
+  printf '\e]133;A\e\\'
+  printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD"
+  printf '\e]133;B\e\\'
 }
 
 # ---- toggle ----------------------------------------------------------------

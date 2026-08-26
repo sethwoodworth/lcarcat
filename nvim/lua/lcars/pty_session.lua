@@ -33,6 +33,16 @@ local function percent_decode(s)
   return s:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
 end
 
+-- A lone \r held in carry across a chunk boundary (e.g. "\r at end of chunk"
+-- below) stays attached to buf until the next flush point. If that flush is
+-- triggered by a bare \n or an OSC start rather than the paired \r\n case,
+-- the \r is still sitting at the end of buf and would otherwise leak into
+-- the emitted line as a literal ^M.
+local function strip_trailing_cr(s)
+  if s:sub(-1) == "\r" then return s:sub(1, -2) end
+  return s
+end
+
 local function parse_osc(body, carry)
   if body == "133;A" then
     carry.skip_lines = false
@@ -129,7 +139,7 @@ function M._parse_chunk(carry, bytes)
         if b2 == "]" then
           -- Start of OSC sequence
           if buf ~= "" and not skip_lines then
-            items[#items + 1] = { kind = "line", text = buf }
+            items[#items + 1] = { kind = "line", text = strip_trailing_cr(buf) }
           end
           buf = ""
           osc = ""
@@ -165,7 +175,7 @@ function M._parse_chunk(carry, bytes)
         end
       elseif b == "\n" then
         if not skip_lines and buf ~= "" then
-          items[#items + 1] = { kind = "line", text = buf }
+          items[#items + 1] = { kind = "line", text = strip_trailing_cr(buf) }
         end
         buf = ""
         i = i + 1
@@ -193,20 +203,24 @@ end
 
 local function make_on_stdout(callbacks, carry_ref)
   return function(_, data, _)
-    for _, chunk in ipairs(data) do
-      if chunk == "" then break end
-      local new_carry, items = M._parse_chunk(carry_ref[1], chunk)
-      carry_ref[1] = new_carry
-      vim.schedule(function()
-        for _, item in ipairs(items) do
-          if item.kind == "line" then
-            if callbacks.on_output_line then callbacks.on_output_line(item.text) end
-          else
-            dispatch(callbacks, item)
-          end
+    -- nvim's on_stdout already splits the raw byte stream on "\n" and strips
+    -- it before this callback sees `data` — rejoin with "\n" to restore real
+    -- line endings. _parse_chunk detects line boundaries by scanning for
+    -- literal \r/\n bytes; without this every chunk lacks the \n it needs and
+    -- text just piles into an unflushed carry, never emitting a line.
+    local bytes = table.concat(data, "\n")
+    if bytes == "" then return end
+    local new_carry, items = M._parse_chunk(carry_ref[1], bytes)
+    carry_ref[1] = new_carry
+    vim.schedule(function()
+      for _, item in ipairs(items) do
+        if item.kind == "line" then
+          if callbacks.on_output_line then callbacks.on_output_line(item.text) end
+        else
+          dispatch(callbacks, item)
         end
-      end)
-    end
+      end
+    end)
   end
 end
 

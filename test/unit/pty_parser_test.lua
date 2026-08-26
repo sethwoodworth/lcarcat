@@ -199,6 +199,28 @@ do
   eq("15c osc nil",       c1.osc, nil)
 end
 
+-- ── test 16: trailing \r held across a chunk boundary, then a bare \n ────
+-- (the \r must not leak into the emitted line as a literal ^M)
+
+do
+  local c1, i1 = parse(fresh(), "foo\r")
+  deep_eq("16a items", i1, {})
+  eq("16b carry.buf", c1.buf, "foo\r")
+
+  local _, i2 = parse(c1, "\n")
+  deep_eq("16c items", i2, { line("foo") })
+end
+
+-- ── test 17: trailing \r held across a chunk boundary, then an OSC start ──
+
+do
+  local c1, i1 = parse(fresh(), "foo\r")
+  deep_eq("17a items", i1, {})
+
+  local _, i2 = parse(c1, ESC .. "]133;C" .. BEL)
+  deep_eq("17b items", i2, { line("foo"), ev("command_exec") })
+end
+
 -- ── summary ───────────────────────────────────────────────────────────────
 
 print(string.format("\n%d passed, %d failed", PASS, FAIL))
