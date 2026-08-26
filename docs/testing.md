@@ -342,6 +342,69 @@ Delegate to the `visual-inspector` subagent. The inspection question shifts from
 
 ---
 
+## Known gotchas for scripted nvim/PTY tests
+
+Found while building `test/integration/term_input.sh` (lcarcat-lyz). All four
+apply to any future test that drives nvim via `kitty @ send-text` and/or
+submits to a `pty_session`-backed shell.
+
+**`:startinsert` doesn't stick across a scripted Ex-command sequence.**
+Calling `vim.cmd('startinsert')` at the end of a `:luafile`-executed fixture
+— even deferred via `vim.schedule` — does not reliably leave the buffer in
+Insert mode by the time a *later* command in the driving shell script sends
+its own leading-`:` Ex command (e.g. `nvim_check_messages`'s
+`:redir! > file | messages | redir END`). If the buffer is still in Insert
+mode when that arrives, the `:` and the rest of the command get typed as
+**literal text into the buffer** instead of executing — corrupting whatever
+the fixture set up, with no error printed anywhere. Don't have a fixture put
+itself into Insert mode and then rely on timing; instead, have the *driving
+script* send its own explicit `<Esc>` before any Ex-command helper call, and
+explicit `<Esc>` + `i` right before typing buffer content. This is fully
+deterministic and doesn't depend on how long some prior step took.
+
+**`_nvim_focused_window_id` (in `nvim_harness_helpers.sh`) requires real OS
+focus, which a background/non-interactive job never gets.** A kitty window
+launched via `screenshot_harness.sh launch` from a background Claude Code
+job shows `is_focused: false` for both the OS window and its pane — nothing
+in that context can click to focus it. Every helper built on
+`is_focused` silently returns nothing. When a test only ever has one window
+(true for most capture/integration scripts), resolve it by id instead:
+
+```bash
+WIN="$(kitty @ --to "$SOCK" ls | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for osw in d:
+    for t in osw["tabs"]:
+        for w in t["windows"]:
+            print(w["id"])
+' | tail -1)"
+```
+
+**Screenshot capture is unreliable from a background job, independent of
+Screen Recording permission.** `screencapture -l<id>` fails with "could not
+create image from window" for the unfocused window above, even after Screen
+Recording permission is granted to the terminal app — most likely because
+an unfocused fullscreen window isn't actually composited by macOS in that
+context, not a TCC denial. There is no known workaround from a background
+job. Guard screenshot calls behind a skippable flag (see
+`LCARCAT_SKIP_SCREENSHOTS` in `term_input.sh`) so the hard pass/fail
+assertion can still run standalone, and note in the handoff that visual
+confirmation needs an interactive foreground session.
+
+**A `pty_session`-backed shell needs several seconds of cold-start before it
+drains PTY input, even though `jobstart`/`chansend` both return success
+immediately.** This repo's zsh prompt renders LCARS elbow images via kitty
+graphics on every prompt draw, which is slow on a cold first prompt.
+Sending `pty_session.send(...)` right after `pty_session.start(...)`
+appeared to silently do nothing (no error — `chansend` to a job whose shell
+hasn't reached a read-loop yet just doesn't get processed in time). Wait at
+least ~4 seconds between starting the PTY and depending on a command having
+executed, or trigger off an actual event (e.g. the first OSC 133;A) instead
+of a fixed sleep once `terminal_win.lua` wires that up.
+
+---
+
 ## Writing a new test or capture
 
 **Integration test** (`test/integration/`) — use when you have a machine-verifiable assertion. Exit 0/1 must reflect pass/fail. Use `get_cell_grid.py --expect-bg` or `get-text` + grep for assertions. See existing scripts for patterns.

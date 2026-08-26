@@ -43,6 +43,25 @@ via `jobstart`, so submission must go through `chansend(job_id, text)` instead.
 Sharing the file would entangle two different submission paths. `command_buffer.lua`
 is preserved unchanged for the kitty send-text workflow.
 
+## Why `term_input.lua` takes a callback, not a module reference
+
+`term_input.M.open(buf, opts)` calls `opts.on_submit(cmd_text)` rather than
+requiring `pty_session` or `terminal_win` by name. Two reasons:
+
+1. **Ordering.** Submission must set `rec.command` on the live `block_record`
+   *before* the PTY executes the command (otherwise the header can't show
+   command text) — but `rec` and `block_record` are owned by
+   `terminal_win.lua`, not `term_input.lua` or `pty_session.lua`. A plain
+   callback lets `terminal_win.lua` do `rec.command = cmd_text` then call
+   `pty_session.send(cmd_text)`, without `term_input.lua` needing to know
+   `block_record` exists.
+2. **Buildable before `terminal_win.lua` exists.** `term_input.lua`
+   (`lcarcat-lyz`) and `terminal_win.lua` (`lcarcat-2z9`) are separate beads;
+   `2z9` depends on `lyz`. A callback means `term_input.lua` can be built and
+   capture-tested standalone by passing `on_submit = pty_session.send`
+   directly — proving the input→PTY path end-to-end — without a stub
+   `terminal_win.lua` module needing to exist first.
+
 ---
 
 ## Block state machine
@@ -86,7 +105,7 @@ State → chrome color:
 | `frame_renderer.lua` | Pure render: given `(buf, start_row, rec)` write lines and return row count. Calls image_registry for placeholder cells. Uses baleia for content lines. |
 | `frame_buffer.lua` | Owns the display buffer (`modifiable=false` except during writes). `open_block`, `append_line`, `close_block`. |
 | `pty_session.lua` | `jobstart(shell, {pty=true})`. Carry-buffer for split chunks. OSC 133 state machine. `M.send(text)` → `chansend`. |
-| `term_input.lua` | Orange-stem input split. `submit()` → `pty_session.send()`. Telescope history. Does not touch `command_buffer.lua`. |
+| `term_input.lua` | Orange-stem input split. `M.open(buf, opts)` configures a buffer/window created by the caller (does not call `nvim_open_win` itself). `opts.on_submit(cmd_text)` is a plain callback — term_input never requires `pty_session` or `terminal_win` by name. Telescope history. Does not touch `command_buffer.lua`. |
 | `terminal_win.lua` | Layout: display split (top) + input split (bottom). Wires pty_session callbacks to frame_buffer. `:LcarsTerm` command. |
 
 Reuse from `block_demo.lua`: `chips_block()` pattern, `capcols()` math, chip/bar
@@ -141,10 +160,17 @@ callbacks = {
 }
 ```
 
-**Command submission flow** (term_input.submit → terminal_win → pty_session):
-1. `term_input.submit()` reads the nvim buffer contents → calls `terminal_win.submit(cmd_text)`
-2. `terminal_win.submit` sets `rec.command = cmd_text` on the current (live) `block_record`
-3. Then calls `pty_session.send(cmd_text)` — PTY executes it
+**Command submission flow** (term_input → on_submit callback → pty_session):
+1. `terminal_win.lua` opens the input split/buffer itself, then calls
+   `term_input.open(buf, { win = input_win, on_submit = terminal_win.submit })`.
+2. `term_input.submit()` reads the nvim buffer contents, strips trailing
+   blanks, and calls `opts.on_submit(cmd_text)` — i.e. `terminal_win.submit(cmd_text)`.
+3. `terminal_win.submit` sets `rec.command = cmd_text` on the current (live) `block_record`.
+4. Then calls `pty_session.send(cmd_text)` — PTY executes it.
+5. `term_input.submit()` clears the input buffer to a blank line for the next command.
+
+`term_input.lua` never requires `pty_session` or `terminal_win` by name — see
+"Why `term_input.lua` takes a callback, not a module reference" above.
 
 **Window layout:** Display buffer in top split (`modifiable=false`, `signcolumn=no`). Input split below (fixed height, `signcolumn=yes:1` for orange stem). Pass actual window `width` and `height` to `pty_session.start()` via `opts`.
 
