@@ -225,12 +225,12 @@ do
   deep_eq("17b items", i2, { line("foo"), ev("command_exec") })
 end
 
--- ── test 18: OSC 7337 chip payload ───────────────────────────────────────
+-- ── test 18: OSC 7447 chip payload ───────────────────────────────────────
 
 local function ev_chips(c) return { kind = "event", type = "chips", chips = c } end
 
 do
-  local _, items = parse(fresh(), ESC .. "]7337;lcars;chips;git;main;venv;lcarcat" .. ST)
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;git;main;venv;lcarcat" .. ST)
   deep_eq("18a chips", items, { ev_chips({
     { kind = "git",  label = "main" },
     { kind = "venv", label = "lcarcat" },
@@ -240,14 +240,14 @@ end
 -- ── test 19: empty chip set still fires (clears a stale list) ─────────────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7337;lcars;chips" .. ST)
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips" .. ST)
   deep_eq("19a chips", items, { ev_chips({}) })
 end
 
 -- ── test 20: percent-decoding of ";" and "%" inside a chip label ──────────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7337;lcars;chips;git;feat%3Ba;venv;v%25x" .. ST)
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;git;feat%3Ba;venv;v%25x" .. ST)
   deep_eq("20a chips", items, { ev_chips({
     { kind = "git",  label = "feat;a" },
     { kind = "venv", label = "v%x" },
@@ -257,14 +257,14 @@ end
 -- ── test 21: truncated trailing field is dropped, not half-emitted ────────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7337;lcars;chips;git;main;venv" .. ST)
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;git;main;venv" .. ST)
   deep_eq("21a chips", items, { ev_chips({ { kind = "git", label = "main" } }) })
 end
 
 -- ── test 22: chip payload split across a chunk boundary ──────────────────
 
 do
-  local c1, i1 = parse(fresh(), ESC .. "]7337;lcars;chi")
+  local c1, i1 = parse(fresh(), ESC .. "]7447;lcars;chi")
   deep_eq("22a items", i1, {})
   local _, i2 = parse(c1, "ps;git;main" .. ST)
   deep_eq("22b items", i2, { ev_chips({ { kind = "git", label = "main" } }) })
@@ -273,7 +273,7 @@ end
 -- ── test 23: an empty label survives as an empty string, kind intact ─────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7337;lcars;chips;err;;git;main" .. ST)
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;err;;git;main" .. ST)
   deep_eq("23a chips", items, { ev_chips({
     { kind = "err", label = "" },
     { kind = "git", label = "main" },

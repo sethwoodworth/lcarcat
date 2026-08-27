@@ -145,7 +145,7 @@ local function make_callbacks(fb)
       if state.rec then state.rec.cwd = vim.fn.fnamemodify(path, ":~") end
     end,
 
-    -- OSC 7337 — branch/venv/py/aws chips computed by the shell's precmd.
+    -- OSC 7447 — branch/venv/py/aws chips computed by the shell's precmd.
     on_chips = function(chips)
       if state.rec then state.rec.chips = block_chips.from_osc(chips) end
     end,

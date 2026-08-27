@@ -15,7 +15,7 @@
 --   on_command_done(exit_code)   OSC 133;D;N — command finished
 --   on_output_line(line)         non-OSC, non-echoed output line
 --   on_cwd(path)                 OSC 7 — shell changed directory
---   on_chips(chips)              OSC 7337 — semantic prompt chips
+--   on_chips(chips)              OSC 7447 — semantic prompt chips
 --   on_exit(exit_code)           job process exited
 -- }
 --
@@ -44,9 +44,10 @@ local function strip_trailing_cr(s)
   return s
 end
 
--- parse_chips: decode an OSC 7337 chip payload — flat ";"-separated
+-- parse_chips: decode an OSC 7447 chip payload — flat ";"-separated
 -- <kind>;<label> pairs, with ";" and "%" percent-encoded inside labels.
--- See zsh/prompt_lcars.zsh's _lcars_emit_chips for the emitting side.
+-- Wire format is specified in docs/osc-7447.md; zsh/prompt_lcars.zsh's
+-- _lcars_emit_chips is the emitting side.
 -- Returns { { kind = "git", label = "main" }, ... } in emission order.
 local function parse_chips(payload)
   local fields = {}
@@ -82,12 +83,12 @@ local function parse_osc(body, carry)
     if path then
       return { kind = "event", type = "cwd", path = percent_decode(path) }
     end
-    -- An empty chip set is emitted as a bare "7337;lcars;chips" (no trailing
+    -- An empty chip set is emitted as a bare "7447;lcars;chips" (no trailing
     -- ";"), and must still fire so a stale chip list gets cleared.
-    if body == "7337;lcars;chips" then
+    if body == "7447;lcars;chips" then
       return { kind = "event", type = "chips", chips = {} }
     end
-    local payload = body:match("^7337;lcars;chips;(.*)$")
+    local payload = body:match("^7447;lcars;chips;(.*)$")
     if payload then
       return { kind = "event", type = "chips", chips = parse_chips(payload) }
     end

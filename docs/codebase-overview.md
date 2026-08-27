@@ -93,6 +93,7 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Use or define terms for shell/terminal structure (block, frame, stem, header, footer, rail, gap) | [`docs/terminal-block-terminology.md`](terminal-block-terminology.md) |
 | Understand PNG generation or asset caching | [`docs/asset-pipeline.md`](asset-pipeline.md) |
 | Work on the nvim terminal frame (blocks, PTY, frame_renderer/frame_buffer/term_input) | [`docs/nvim-terminal-frame.md`](nvim-terminal-frame.md) |
+| Change what the shell tells nvim (chips, prompt metadata over the wire) | [`docs/osc-7447.md`](osc-7447.md) — the protocol spec, written to stand alone |
 | Look up nvim API behaviour or plugin capability for the terminal frame | [`docs/nvim-terminal-research.md`](nvim-terminal-research.md) |
 | Write ANSI output into a `modifiable=false` display buffer (baleia) | [`docs/spike-2-baleia-findings.md`](spike-2-baleia-findings.md) |
 | Understand why a design decision was made under an epic | [`docs/architecture-decisions.md`](architecture-decisions.md) |

@@ -293,18 +293,18 @@ _lcars_aws_seg() {
   print -rn -- " AWS|${AWS_PROFILE} "
 }
 
-# ---- OSC 7337: semantic chip payload for lcars.pty_session -----------------
+# ---- OSC 7447: semantic chip payload (spec: docs/osc-7447.md) --------------
 # The kitty swoop bar draws its chips itself, as pixels. Inside :LcarsTerm there
 # are no graphics, so nvim's frame_renderer draws the block-header chips and
 # needs the *values* rather than the rendering. Body:
 #
-#   ESC ] 7337 ; lcars ; chips [ ; <kind> ; <label> ]... ST
+#   ESC ] 7447 ; lcars ; chips [ ; <kind> ; <label> ]... ST
 #
 # The shell names what a chip means (err/venv/py/aws/awsdep/git/gitstate);
 # nvim/lua/lcars/block_chips.lua maps kind -> highlight group, so colors stay a
 # neovim concern. `;` separates fields, so `;` and `%` are percent-encoded in
 # labels (branch names may legally contain either). Terminals that don't know
-# OSC 7337 ignore it, which makes this safe to emit unconditionally.
+# OSC 7447 ignore it, which makes this safe to emit unconditionally.
 _lcars_emit_chips() {
   local out="" lbl
   local -i i
@@ -312,7 +312,7 @@ _lcars_emit_chips() {
     lbl=${argv[i+1]//\%/%25}
     out+=";${argv[i]};${lbl//;/%3B}"
   done
-  printf '\e]7337;lcars;chips%s\e\\' "$out"
+  printf '\e]7447;lcars;chips%s\e\\' "$out"
 }
 
 # ---- render one bar row of Style-B chips (text row) or blanks (other row) ---
@@ -372,7 +372,7 @@ _lcars_swoop_precmd() {
 
   # ---- segment values, shared by both render paths -------------------------
   # Gathered before the graphics check because both the kitty swoop bar and the
-  # OSC 7337 chip payload are built from them, and neither path should pay for a
+  # OSC 7447 chip payload are built from them, and neither path should pay for a
   # second round of git subprocesses.
   # (note: `status` is a read-only special in zsh -> use `estat`)
   local venv="" py gbranch estat cwd aws

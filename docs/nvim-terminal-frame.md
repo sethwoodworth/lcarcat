@@ -84,7 +84,7 @@ OSC 133 marks (emitted by kitty shell integration) drive the block lifecycle:
 A (prompt start)
   → create block_record — but do NOT render anything yet (see below)
 
-7 (cwd) / 7337 (chips)
+7 (cwd) / 7447 (chips)
   → populate rec.cwd and rec.chips while the prompt draws
 
 B (command start)
@@ -133,7 +133,7 @@ below for why, and where the failure actually shows.
 
 ---
 
-## OSC 7337 — semantic chip payload
+## OSC 7447 — semantic chip payload
 
 Block headers carry the same chips as the kitty swoop bar (branch, venv, python,
 AWS profile, git state). The shell already computes all of it in
@@ -145,24 +145,22 @@ false and the prompt takes its plain-text fallback path. The chip payload is
 emitted on *both* paths, right after `OSC 133;A`:
 
 ```
-ESC ] 7337 ; lcars ; chips [ ; <kind> ; <label> ]... ST
+ESC]7447;lcars;chips;venv;lcarcat;git;main;gitstate;02-STAGED ESC\
 ```
 
-- **Flat pairs.** Everything after `chips` is alternating kind/label separated
-  by `;`. An empty chip set is the bare `7337;lcars;chips` with no trailing
-  `;` — it still fires, so a stale chip list gets cleared.
-- **Percent-encoding.** `;` is the field separator, so `;` and `%` are
-  percent-encoded in labels (git branch names may legally contain either).
-- **Kinds, not colors.** The shell names what a chip *means* (`venv`, `py`,
-  `aws`, `awsdep`, `git`, `gitstate`); `block_chips.lua` maps kind →
-  highlight group. The palette stays a neovim concern. An unrecognized kind
-  still renders, in the default chip color, rather than vanishing.
-- **No `err` chip.** The swoop bar has one, but the payload does not:
-  `precmd` runs *after* a command, so its `$?` belongs to the command that just
-  finished — while these chips attach to the block about to open, i.e. the next
-  one. Exit status is reported on the correct block's own footer instead.
-- **Safe to emit anywhere.** Terminals that don't know OSC 7337 ignore it, so
-  the sequence goes out unconditionally, kitty included.
+**The wire format is specified in [`docs/osc-7447.md`](osc-7447.md)** — escaping,
+the empty-set form, the kind vocabulary, forward-compatibility rules, and why
+exit status is deliberately not a chip. That file is written to stand alone, so
+it can be published without dragging lcarcat context along; keep it that way and
+keep protocol details there rather than duplicating them here.
+
+What matters at this layer:
+
+- **Kinds, not colors.** The shell names what a chip *means*;
+  `block_chips.lua` maps kind → highlight group, so the palette stays a neovim
+  concern. An unrecognized kind still renders, in the default chip color.
+- **The `dur` kind is nvim-only.** It never appears on the wire — duration is
+  computed here from the finished block, not reported by the shell.
 
 ### Header layout, and where the cwd goes
 
@@ -313,7 +311,7 @@ flush with the frame's right edge — and col 173 is empty. Regression-tested by
 | `image_registry.lua` | Transmit elbow/hcap PNGs once per session via APC escape; cache `(asset, cw, ch)` → kitty image ID. |
 | `frame_renderer.lua` | Pure render: given `(buf, start_row, rec)` write lines and return row count. Calls image_registry for placeholder cells. Uses baleia for content lines. |
 | `frame_buffer.lua` | Owns the display buffer (`modifiable=false` except during writes). `open_block`, `append_line`, `close_block`. |
-| `pty_session.lua` | `jobstart(shell, {pty=true})`. Carry-buffer for split chunks. OSC 133 / 7 / 7337 state machine. `M.send(text)` → `chansend`. |
+| `pty_session.lua` | `jobstart(shell, {pty=true})`. Carry-buffer for split chunks. OSC 133 / 7 / 7447 state machine. `M.send(text)` → `chansend`. |
 | `block_chips.lua` | Chip kind → highlight group; duration label formatting. The one place shell chip semantics become LCARS colors. |
 | `term_input.lua` | Orange-stem input split. `M.open(buf, opts)` configures a buffer/window created by the caller (does not call `nvim_open_win` itself). `opts.on_submit(cmd_text)` is a plain callback — term_input never requires `pty_session` or `terminal_win` by name. Telescope history. Does not touch `command_buffer.lua`. |
 | `terminal_win.lua` | Layout: display split (top) + input split (bottom). Wires pty_session callbacks to frame_buffer. `:LcarsTerm` command. |

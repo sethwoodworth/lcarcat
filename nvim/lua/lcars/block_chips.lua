@@ -1,6 +1,6 @@
 -- block_chips.lua — semantic shell chips → frame_renderer chip entries.
 --
--- The shell (zsh/prompt_lcars.zsh) emits OSC 7337 naming what each chip
+-- The shell (zsh/prompt_lcars.zsh) emits OSC 7447 naming what each chip
 -- *means* — err, venv, py, aws, awsdep, git, gitstate — and pty_session parses
 -- that into { kind = , label = } records. This module is the one place that
 -- turns a kind into a color, so the LCARS palette stays a neovim concern and

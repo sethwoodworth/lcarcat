@@ -158,7 +158,7 @@ if b1["cwd"]:
     check(b1["cwd"].startswith("~") or not b1["cwd"].startswith("/home/"),
           f"01-after-ls: cwd should collapse $HOME to ~, got {b1['cwd']!r}")
 
-# Chips arrive over OSC 7337 and are tagged with their kind. "err" must never be
+# Chips arrive over OSC 7447 and are tagged with their kind. "err" must never be
 # among them: precmd's exit code belongs to the previous command, so exit status
 # is reported on the footer of its own block instead.
 KNOWN = {"venv", "py", "aws", "awsdep", "git", "gitstate"}
