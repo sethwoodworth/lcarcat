@@ -104,11 +104,41 @@ Only the last scheduled refresh within 80ms fires. `redrawtabline` alone won't r
 
 ```lua
 { "VimResized", "WinResized", "WinNew", "WinClosed", "TabEnter",
-  "BufWinEnter", "WinEnter" }   -- layout changes
+  "BufWinEnter", "WinEnter", "WinScrolled" }   -- layout changes
 { "OptionSet", pattern = { "number", "numberwidth", "signcolumn" } }  -- gutter width changes
 ```
 
 `BufWinEnter`/`WinEnter` catch a window switching to a gutterless buffer (e.g. netrw), which changes elbow-vs-cap without a resize.
+
+### Why `WinScrolled` is in a *layout*-change list
+
+Scrolling changes no layout, so this looks wrong. It is there because chrome
+images can share a screen row with another component's images, and the kitty
+image layer has no z-ordering or ownership between them.
+
+A window's top-left elbow is placed at `y = row - 2` — on the separator row
+*above* that window. For `:LcarsTerm`, that is the row between the display and
+input windows. When the display window scrolls, `image.nvim` clears and
+re-transmits the block frame images, and takes the chrome images on that row
+with them. Without a `WinScrolled` subscription nothing ever re-placed them, so
+the separator's ends stayed black.
+
+Two things made this hard to recognize:
+
+- **`redraw!` does not fix it.** It repaints nvim's text cells, not kitty image
+  placements. If a missing element survives `redraw!`, suspect the image layer,
+  not the highlight layer.
+- **It looks intermittent.** The row recovers by accident whenever any *other*
+  event in the list fires — most often `WinEnter`, when focus moves between the
+  two windows. So it appears and disappears with no obvious trigger.
+
+`schedule_refresh` is debounced at 80ms behind a token (see "Debounced
+refresh"), so subscribing to a high-frequency event costs one refresh per
+scroll burst, not per scroll step.
+
+**General rule:** any component placing kitty images must assume a neighbour
+may clear rows it does not own, and must re-place on the events that cause a
+neighbour to redraw — not only on the events that change its own geometry.
 
 ---
 

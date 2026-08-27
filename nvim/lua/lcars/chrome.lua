@@ -434,8 +434,20 @@ vim.api.nvim_create_autocmd("VimEnter", {
 
 -- BufWinEnter/WinEnter catch a window switching to a gutterless buffer (e.g. netrw),
 -- which changes elbow-vs-cap without firing a resize/layout event.
+-- WinScrolled is in the list because chrome images can share a screen row with
+-- another plugin's images: a window's top-left elbow is placed at y = row-2,
+-- i.e. ON the separator row above it, which for :LcarsTerm is the row between
+-- the display and input windows. When the display window scrolls, image.nvim
+-- clears and re-transmits the block frame images, taking the chrome images on
+-- that row with them. Nothing here fired on scroll, so they stayed gone — and
+-- `redraw!` did not bring them back, since it repaints nvim's text cells and
+-- not kitty image placements. The separator only recovered by accident, when
+-- some *other* event in this list fired (WinEnter on focus change), which is
+-- why it looked intermittent. schedule_refresh is debounced at 80ms, so the
+-- scroll-event volume costs nothing. (lcarcat-ba0 follow-up)
 vim.api.nvim_create_autocmd(
-  { "VimResized", "WinResized", "WinNew", "WinClosed", "TabEnter", "BufWinEnter", "WinEnter" },
+  { "VimResized", "WinResized", "WinNew", "WinClosed", "TabEnter", "BufWinEnter",
+    "WinEnter", "WinScrolled" },
   { callback = schedule_refresh }
 )
 vim.api.nvim_create_autocmd({ "OptionSet" }, {
