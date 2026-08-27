@@ -51,7 +51,7 @@ dump_state() {
 
 # submit_line TEXT — Esc (deterministic mode), i, TEXT, Esc, <CR> (term_input's
 # normal-mode submit keymap). Explicit Esc before/after per the scripted-nvim
-# gotchas in docs/testing.md — never rely on startinsert timing.
+# gotchas in docs/test-harness.md — never rely on startinsert timing.
 submit_line() {
   local text="$1"
   kitty @ --to "$SOCK" send-text --match "id:$WIN" $'\x1b'
@@ -69,7 +69,7 @@ submit_line() {
 
 nvim_run_cmd "$SOCK" "$WIN" "LcarsTerm"
 # Cold start: the nested shell's first prompt draw is slow (kitty graphics +
-# git segment probes on every precmd) — see docs/testing.md pty cold-start gotcha.
+# git segment probes on every precmd) — see docs/test-harness.md pty cold-start gotcha.
 sleep 5.0
 nvim_check_messages "$SOCK" "$WIN" "term-win-opened"
 

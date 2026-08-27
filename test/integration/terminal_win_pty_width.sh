@@ -68,7 +68,7 @@ submit_line() {
 
 nvim_run_cmd "$SOCK" "$WIN" "LcarsTerm"
 # Cold start: the nested shell's first prompt draw is slow (kitty graphics +
-# git segment probes on every precmd) — see docs/testing.md pty cold-start gotcha.
+# git segment probes on every precmd) — see docs/test-harness.md pty cold-start gotcha.
 sleep 5.0
 nvim_check_messages "$SOCK" "$WIN" "term-width-opened"
 

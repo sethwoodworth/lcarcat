@@ -1,6 +1,6 @@
 # nvim Harness Interaction Guide
 
-How to drive nvim via the kitty remote-control socket from shell scripts (scenario tests, debug sessions, the screenshot harness). This complements `docs/testing.md`, which covers the harness at the scenario level. This document covers the patterns specific to nvim interaction.
+How to drive nvim via the kitty remote-control socket from shell scripts (scenario tests, debug sessions, the screenshot harness). This complements `docs/test-harness.md`, which covers the harness at the scenario level. This document covers the patterns specific to nvim interaction.
 
 ---
 
@@ -458,7 +458,9 @@ thing you want to inspect so it is the last thing drawn.
 
 ## Related docs
 
-- `docs/testing.md` — full harness reference, scenario template, pixel tools
+- `docs/testing.md` — which tests exist and how to run them
+- `docs/test-harness.md` — screenshot harness, scenario template, scripted-input gotchas
+- `docs/test-tools.md` — pixel and semantic color tools, measuring rendered output
 - `docs/nvim-chrome.md` — image.nvim integration, chrome.lua architecture
 - `docs/asset-pipeline.md` — PNG filename contract, gen_swoops.py, cache layout
 - `docs/nvim-terminal-frame.md` — "Why images are bound to (window, buffer, row)" for how the terminal frame uses buffer-bound placement

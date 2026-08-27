@@ -83,7 +83,9 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Work on kitty config or image rendering | [`docs/kitty-graphics.md`](kitty-graphics.md), [`docs/asset-pipeline.md`](asset-pipeline.md) |
 | Work on nvim chrome (elbows, caps, frame) | [`docs/nvim-chrome.md`](nvim-chrome.md), [`docs/asset-pipeline.md`](asset-pipeline.md) |
 | Work on colors or the palette | [`docs/palette.md`](palette.md) |
-| Run or write screenshot tests | [`docs/testing.md`](testing.md) |
+| Run screenshot tests, or see which tests exist | [`docs/testing.md`](testing.md) |
+| Write or debug a scenario script (kitty harness, timing, scripted input) | [`docs/test-harness.md`](test-harness.md) |
+| Inspect rendered output (cell colors, cell coordinates, line widths) | [`docs/test-tools.md`](test-tools.md) |
 | Drive nvim via kitty socket (tab nav, messages, image timing) | [`docs/nvim-harness.md`](nvim-harness.md) |
 | Debug image.nvim placement/scroll quirks (buffer-bound images, off-by-one rows, horizontal scroll) | [`docs/nvim-harness.md`](nvim-harness.md) |
 | Deploy changes to ~/.config | [`docs/deployment.md`](deployment.md) |
