@@ -21,6 +21,8 @@ Load only the docs relevant to your task:
 | deploy or file mappings | `docs/deployment.md` |
 | design or layout decisions | `docs/lcars-design.md` |
 | any text output, glyphs, or symbols (shell scripts, hooks, prompts) | `docs/lcars-design.md` (glyph kit) |
+| why a design decision was made under an epic | `docs/architecture-decisions.md` |
+| writing ANSI output into a `modifiable=false` buffer (baleia) | `docs/spike-2-baleia-findings.md` |
 
 ---
 

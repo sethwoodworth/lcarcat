@@ -14,7 +14,7 @@ How to drive nvim via the kitty remote-control socket from shell scripts (scenar
 | Screenshot shows the wrong state | Check `:messages` before taking the screenshot |
 | Image from previous tab still visible | TabEnter re-render with `vim.schedule` — or explicit `img:clear()` sweep |
 | E5108 "Invalid 'line': out of range" | Two-pass rule violated — see below |
-| Need to know which column something rendered in | Probe the live session with `get_cell_grid.py` — section 11, not a screenshot |
+| Need to know which column something rendered in | Probe the live session with `get_cell_grid.py` — section 13, not a screenshot |
 
 ---
 
@@ -407,7 +407,7 @@ The cmd text on the stub row (`mark_at`) must start at `lp + ELBOW_W` (col `lp+5
 
 ---
 
-## 11. Probing a live session without screenshots
+## 13. Probing a live session without screenshots
 
 Screenshots are the expensive way to answer a geometry question: capture, then
 overlay a grid, then have a subagent read the PNG. For "which column does this
