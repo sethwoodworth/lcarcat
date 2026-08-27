@@ -86,11 +86,29 @@ Each image is transmitted once with a fixed id and a virtual placement (`U=1`) s
 
 ### Transmission
 
-The zsh prompt sends PNG bytes inline (`t=d`, base64-encoded) rather than a file path (`t=f`). This matters: `t=d` is synchronous — kitty processes all data in one read before the next write arrives, so placeholder cells drawn immediately after are guaranteed to find the image registered. `t=f` is async — kitty reads the file on its own schedule and can miss the first placeholder draw.
+The zsh prompt sends PNG **bytes** inline (`t=d`, base64 of the file contents) rather than a file path (`t=f`). Two reasons, both of them real bugs rather than theory:
+
+**Synchronous.** kitty has all the data in one read and processes it before the next write arrives, so placeholder cells drawn immediately after are guaranteed to find the image registered. `t=f` is async — kitty opens the file on its own schedule and can miss the first placeholder draw.
+
+**Race-free.** With `t=f`, kitty holds the file mmap'd and reads it whenever it likes. Rewrite that file underneath a live mapping and kitty faults past a truncated EOF and takes **SIGBUS** — which is exactly the 2026-08-26 crash (lcarcat-46w): `deploy.sh`'s in-place copy opened the destination `O_TRUNC`, leaving it zero bytes mid-copy, while a prompt was drawing. With `t=d` kitty never opens the file at all, so the hazard cannot arise on this path.
+
+That does **not** retire the atomic-write fix in `deploy.sh` and `gen_swoops.py` (see [asset-pipeline.md](asset-pipeline.md)): nvim's image.nvim consumer is still handed *paths*, so it retains the same exposure and still depends on writers using temp-file + `rename(2)`.
 
 ```zsh
-printf '\e_Ga=T,U=1,i=%d,f=100,t=f,c=%d,r=%d,q=2;%s\e\\' "$id" "$cols" "$rows" "$base64data"
+printf '\e_Ga=T,U=1,i=%d,f=100,t=d,c=%d,r=%d,q=2;%s\e\\' "$id" "$cols" "$rows" "$base64data"
 ```
+
+**Chunking.** kitty caps a graphics escape at 4096 bytes of base64 payload. Larger images must be split: control data rides the *first* escape with `m=1`, continuations carry only `m=1`, and the final escape carries `m=0`.
+
+```zsh
+\e_Ga=T,U=1,i=1,f=100,t=d,c=5,r=3,q=2,m=1;<chunk>\e\    # first: control + m=1
+\e_Gm=1;<chunk>\e\                                       # middle
+\e_Gm=0;<chunk>\e\                                       # last
+```
+
+Current assets are ~1.8–2.6KB of base64 and never reach this path, but a large font means larger cells, larger PNGs, and eventually multi-chunk. `_lc_transmit` handles both cases.
+
+> Historical note: the code sent `t=f` from the initial commit while this document and the function's own comment described `t=d` and its benefits. The prose was right about what we wanted; the code had never done it. Resolved 2026-08-27 by implementing `t=d`.
 
 ### Cursor-anchored vs windowless placement
 

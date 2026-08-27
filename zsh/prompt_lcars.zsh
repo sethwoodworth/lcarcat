@@ -111,14 +111,47 @@ _lc_ph() {  # $1 image-id  $2 grid-row (0-based)  $3 ncols  [$4 flat-col]
   done
   print -n -- "\e[0m"
 }
+# Chunk size for direct transmission: kitty caps a graphics escape at 4096 bytes of
+# base64 payload, so anything larger must be split across continuation escapes.
+_LC_GR_CHUNK=4096
+
 _lc_transmit() {  # $1 path  $2 id  $3 cols  $4 rows — transmit + create a virtual placement
-  # t=d sends PNG bytes inline (base64-encoded file contents, not a path). This is
-  # synchronous: kitty has all data in one read and processes it before the next write
-  # arrives, so placeholder cells drawn immediately after are guaranteed to find the
-  # image registered. t=f (file path) is async — kitty reads the file on its own
-  # schedule and can miss the first placeholder draw.
-  local b; b=$(print -rn -- "$1" | base64 | tr -d '\n')
-  printf '\e_Ga=T,U=1,i=%d,f=100,t=f,c=%d,r=%d,q=2;%s\e\\' "$2" "$3" "$4" "$b"
+  # t=d sends the PNG BYTES inline (base64 of the file contents). Two reasons, both
+  # real bugs we have hit or nearly hit:
+  #
+  #  1. Race-free. t=f hands kitty a PATH and kitty opens/mmaps it on its own schedule.
+  #     Rewrite that file underneath a live mapping and kitty faults past a truncated
+  #     EOF and takes SIGBUS — which is exactly the 2026-08-26 crash (lcarcat-46w).
+  #     deploy.sh and gen_swoops.py now write atomically so the mapping stays valid,
+  #     but with t=d kitty never opens the file at all, so the hazard cannot recur
+  #     here regardless. (The atomic writes are still needed: nvim's image.nvim
+  #     consumer is handed paths.)
+  #  2. Synchronous. kitty has all the data in one read and processes it before the
+  #     next write arrives, so the placeholder cells drawn immediately after are
+  #     guaranteed to find the image registered. t=f could miss the first draw.
+  #
+  # This is what docs/kitty-graphics.md has always described; the code said t=f from
+  # the initial commit. Now they agree.
+  local b; b=$(base64 < "$1" 2>/dev/null | tr -d '\n')
+  [[ -n $b ]] || return 1
+
+  local -i n=${#b}
+  if (( n <= _LC_GR_CHUNK )); then
+    printf '\e_Ga=T,U=1,i=%d,f=100,t=d,c=%d,r=%d,q=2;%s\e\\' "$2" "$3" "$4" "$b"
+    return 0
+  fi
+
+  # Multi-chunk: control data rides the first escape only, m=1 means "more follows",
+  # m=0 closes the sequence. Our current assets are ~2KB of base64 and never reach
+  # this path, but a large font (bigger cells -> bigger PNGs) would.
+  local -i off=$(( _LC_GR_CHUNK + 1 ))
+  printf '\e_Ga=T,U=1,i=%d,f=100,t=d,c=%d,r=%d,q=2,m=1;%s\e\\' \
+    "$2" "$3" "$4" "${b[1,_LC_GR_CHUNK]}"
+  while (( n - off + 1 > _LC_GR_CHUNK )); do
+    printf '\e_Gm=1;%s\e\\' "${b[off,off + _LC_GR_CHUNK - 1]}"
+    (( off += _LC_GR_CHUNK ))
+  done
+  printf '\e_Gm=0;%s\e\\' "${b[off,n]}"
 }
 # Fixed image ids: 1 elbow-left, 2 elbow-right, 3 cap-left, 4 cap-right. The c×r grid is
 # in cells, but the PNG dimensions have to match the actual cell.width × cell.height that
