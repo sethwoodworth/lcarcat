@@ -5,7 +5,11 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-output=$(nvim --headless -u NONE \
+# --clean, not -u NONE: -u NONE still leaves ~/.config/nvim on 'runtimepath',
+# and nvim's package loader searches rtp lua/ dirs BEFORE package.path — so the
+# deployed copy of lcars.* shadowed the repo copy and these tests silently ran
+# against whatever was last deploy.sh'd. --clean drops user dirs from rtp.
+output=$(nvim --clean --headless \
   -c "lua package.path=package.path..';$REPO/nvim/lua/?.lua'" \
   -c "luafile $REPO/test/unit/pty_parser_test.lua" 2>&1) || code=$?
 
