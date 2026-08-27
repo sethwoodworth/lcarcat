@@ -67,12 +67,26 @@ deploy_one() {
     printf '  would copy  %-28s -> %s\n' "$1" "$dest"; return
   fi
   mkdir -p "$(dirname "$dest")"
-  cp "$src" "$dest"
-  if cmp -s "$src" "$dest"; then
-    printf '  ok    %-28s -> %s\n' "$1" "$dest"
-  else
+  # Copy to a sibling temp, verify it, then rename(2) onto the destination.
+  # A plain in-place copy opens the destination O_TRUNC, so it is momentarily
+  # zero bytes; a reader holding it mmap'd (kitty decoding a t=f PNG from the
+  # prompt) then faults past a truncated EOF and takes SIGBUS. rename(2) is
+  # atomic on APFS and swaps the directory entry instead, leaving the old inode
+  # alive for anyone still mapping it (lcarcat-46w).
+  local tmp="$dest.deploy.$$"
+  if ! cp "$src" "$tmp"; then
+    rm -f "$tmp"
+    printf '  FAIL  %s could not be copied\n' "$1" >&2; return 1
+  fi
+  if ! cmp -s "$src" "$tmp"; then
+    rm -f "$tmp"
     printf '  FAIL  %s did not match after copy\n' "$1" >&2; return 1
   fi
+  if ! mv -f "$tmp" "$dest"; then
+    rm -f "$tmp"
+    printf '  FAIL  %s could not be installed\n' "$1" >&2; return 1
+  fi
+  printf '  ok    %-28s -> %s\n' "$1" "$dest"
 }
 
 printf 'lcarcat deploy: %s -> %s%s\n' "$REPO" "$CONFIG" "$([[ $DRY == 1 ]] && echo '  (dry run)')"

@@ -130,6 +130,24 @@ Assets are cached per `(cellw, cellh, gutter_width)` in `stdpath('cache')/lcars/
 
 ---
 
+## Never rewrite an asset PNG in place
+
+Every PNG write goes through a sibling temp file and `rename(2)` — `save_atomic()`
+in `gen_swoops.py`, and the temp-plus-`mv` in `deploy.sh`'s `deploy_one()`. Do not
+add a bare `img.save(path)` or a plain in-place copy onto a deployed asset.
+
+Why: the zsh prompt transmits images with `t=f` (`_lc_transmit`, `prompt_lcars.zsh`),
+so kitty is handed a *path* and reads/mmaps the file asynchronously, on its own
+schedule. image.nvim does the same for the nvim-side assets. An in-place write opens
+the destination `O_TRUNC`, so the file is momentarily zero bytes — and a reader with
+it mmap'd faults past a truncated EOF, which is SIGBUS, not a recoverable I/O error.
+That crashed kitty on 2026-08-26 (lcarcat-46w).
+
+`rename(2)` is atomic on APFS and swaps the directory entry instead: an existing
+mapping keeps the old inode, alive until the reader closes it. The temp must be a
+sibling (same filesystem) and, for PIL, must keep a `.png` suffix — `Image.save()`
+infers the format from the extension.
+
 ## Supersampling
 
 `gen_swoops.py` draws at 4x supersample (`SS = 4`) then downscales with `Image.LANCZOS` to the final pixel dimensions. This makes the outer corner and inner fillet smooth despite being small shapes. The supersample factor cancels out of the `round_cap_cols` formula, so the declared column width always matches the image actually drawn.

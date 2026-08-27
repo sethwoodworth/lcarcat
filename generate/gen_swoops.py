@@ -54,6 +54,29 @@ BAR_ROWS = 2
 STEM_COLS = 1
 
 
+def save_atomic(img, path):
+    """Save a PNG via a sibling temp + rename(2).
+
+    Image.save() opens the destination O_TRUNC, leaving it zero bytes while the
+    encoder writes. A process holding the old file mmap'd — kitty decoding a
+    t=f PNG handed to it by the zsh prompt or image.nvim — then faults past a
+    truncated EOF and dies with SIGBUS. rename(2) is atomic and swaps the
+    directory entry, so existing mappings keep the old inode (lcarcat-46w).
+
+    The temp keeps a .png suffix: PIL infers the format from the extension.
+    """
+    tmp = "{}.{}.tmp.png".format(path, os.getpid())
+    try:
+        img.save(tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def hex_rgba(h: str):
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (255,)
@@ -141,7 +164,7 @@ def make_swoop(path, color, cols, stem_rows, cellw, cellh, flip, mirror=False,
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
     if mirror:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)   # stem moves to the right edge
-    img.save(path)
+    save_atomic(img, path)
     return path
 
 
@@ -163,7 +186,7 @@ def make_cap(path, color, rows, cellw, cellh, mirror=False):
     img = img.resize((cols * cellw, rows * cellh), Image.LANCZOS)
     if mirror:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
-    img.save(path)
+    save_atomic(img, path)
     return path, cols
 
 
@@ -202,7 +225,7 @@ def make_hcap(path, color, cellw, cellh, side, gap_cols=0, bg=None, rows=1):
         d.pieslice([-wcap, 0, wcap, H], -90, 90, fill=color)
     total = gap_cols + capcols
     img = img.resize((total * cellw, rows * cellh), Image.LANCZOS)
-    img.save(path)
+    save_atomic(img, path)
     return path, total, capcols
 
 
