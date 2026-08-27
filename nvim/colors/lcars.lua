@@ -118,6 +118,18 @@ hi("LcarsTermStemLive",    { fg = p.sage,        bg = p.sage })
 hi("LcarsTermFrameFailed", { fg = p.red,         bg = p.red })
 hi("LcarsTermStemFailed",  { fg = p.red,         bg = p.red })
 
+-- Block-header chips. Dark text on a color block (LCARS "Style B"), mirroring
+-- the swoop bar's chip palette in zsh/prompt_lcars.zsh so the nvim frame and
+-- the standalone kitty prompt read as one system. Kind -> group mapping lives
+-- in nvim/lua/lcars/block_chips.lua.
+hi("LcarsTermChipErr",     { fg = p.bg, bg = p.red,   bold = true })
+hi("LcarsTermChipVenv",    { fg = p.bg, bg = p.lilac })
+hi("LcarsTermChipPy",      { fg = p.bg, bg = p.sky })
+hi("LcarsTermChipAws",     { fg = p.bg, bg = p.orange })
+hi("LcarsTermChipAwsDep",  { fg = p.bg, bg = p.red,   bold = true })
+hi("LcarsTermChipGit",     { fg = p.bg, bg = p.gold })
+hi("LcarsTermChipDur",     { fg = p.bg, bg = p.dim2 })
+
 -- ---------------------------------------------------------------------------
 -- Legacy syntax groups
 -- ---------------------------------------------------------------------------

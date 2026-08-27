@@ -15,6 +15,7 @@
 --   on_command_done(exit_code)   OSC 133;D;N — command finished
 --   on_output_line(line)         non-OSC, non-echoed output line
 --   on_cwd(path)                 OSC 7 — shell changed directory
+--   on_chips(chips)              OSC 7337 — semantic prompt chips
 --   on_exit(exit_code)           job process exited
 -- }
 --
@@ -43,6 +44,25 @@ local function strip_trailing_cr(s)
   return s
 end
 
+-- parse_chips: decode an OSC 7337 chip payload — flat ";"-separated
+-- <kind>;<label> pairs, with ";" and "%" percent-encoded inside labels.
+-- See zsh/prompt_lcars.zsh's _lcars_emit_chips for the emitting side.
+-- Returns { { kind = "git", label = "main" }, ... } in emission order.
+local function parse_chips(payload)
+  local fields = {}
+  for f in (payload .. ";"):gmatch("([^;]*);") do
+    fields[#fields + 1] = f
+  end
+  local out = {}
+  -- Pairs only: a trailing odd field is a truncated chip, so drop it.
+  for i = 1, #fields - 1, 2 do
+    if fields[i] ~= "" then
+      out[#out + 1] = { kind = fields[i], label = percent_decode(fields[i + 1]) }
+    end
+  end
+  return out
+end
+
 local function parse_osc(body, carry)
   if body == "133;A" then
     carry.skip_lines = false
@@ -61,6 +81,15 @@ local function parse_osc(body, carry)
     local path = body:match("^7;file://[^/]*(/.+)$")
     if path then
       return { kind = "event", type = "cwd", path = percent_decode(path) }
+    end
+    -- An empty chip set is emitted as a bare "7337;lcars;chips" (no trailing
+    -- ";"), and must still fire so a stale chip list gets cleared.
+    if body == "7337;lcars;chips" then
+      return { kind = "event", type = "chips", chips = {} }
+    end
+    local payload = body:match("^7337;lcars;chips;(.*)$")
+    if payload then
+      return { kind = "event", type = "chips", chips = parse_chips(payload) }
     end
   end
   return nil
@@ -198,6 +227,7 @@ local function dispatch(callbacks, item)
   elseif t == "command_exec"  and callbacks.on_command_exec  then callbacks.on_command_exec()
   elseif t == "command_done"  and callbacks.on_command_done  then callbacks.on_command_done(item.exit_code)
   elseif t == "cwd"           and callbacks.on_cwd           then callbacks.on_cwd(item.path)
+  elseif t == "chips"         and callbacks.on_chips         then callbacks.on_chips(item.chips)
   end
 end
 

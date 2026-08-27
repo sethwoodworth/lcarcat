@@ -38,13 +38,14 @@ for osw in d:
 nvim_open "$SOCK" "$WIN"
 nvim_check_messages "$SOCK" "$WIN" "term-win-baseline"
 
-# dump_state LABEL — writes {tabs, cursor_at_end, blocks:[{state,command,exit_code,line_count}...]}
+# dump_state LABEL — writes {tabs, cursor_at_end,
+#   blocks:[{state,command,exit_code,line_count,cwd,chips:[kind...]}...]}
 # to $CHECK_DIR/LABEL.json via lcars.frame_buffer's module-level block list.
 # cursor_at_end checks the auto-scroll-to-bottom behavior: whatever window is
 # currently showing frame_buffer.buf should have its cursor on the last line.
 dump_state() {
   local label="$1"
-  local lua="lua local fb=require(\"lcars.frame_buffer\"); local last=vim.api.nvim_buf_line_count(fb.buf); local win=vim.fn.bufwinid(fb.buf); local cursor_at_end=win~=-1 and vim.api.nvim_win_get_cursor(win)[1]==last; local d={tabs=#vim.api.nvim_list_tabpages(),cursor_at_end=cursor_at_end,blocks={}}; for i,b in ipairs(fb.blocks) do d.blocks[i]={state=b.state,command=b.command,exit_code=b.exit_code,line_count=b.line_count} end; vim.fn.writefile({vim.fn.json_encode(d)}, \"$CHECK_DIR/${label}.json\")"
+  local lua="lua local fb=require(\"lcars.frame_buffer\"); local last=vim.api.nvim_buf_line_count(fb.buf); local win=vim.fn.bufwinid(fb.buf); local cursor_at_end=win~=-1 and vim.api.nvim_win_get_cursor(win)[1]==last; local d={tabs=#vim.api.nvim_list_tabpages(),cursor_at_end=cursor_at_end,blocks={}}; for i,b in ipairs(fb.blocks) do local ck={}; for j,c in ipairs(b.chips or {}) do ck[j]=c[3] or \"\" end; d.blocks[i]={state=b.state,command=b.command,exit_code=b.exit_code,line_count=b.line_count,cwd=b.cwd,chips=ck} end; vim.fn.writefile({vim.fn.json_encode(d)}, \"$CHECK_DIR/${label}.json\")"
   kitty @ --to "$SOCK" send-text --match "id:$WIN" ":$lua"$'\r'
   sleep 0.4
 }
@@ -136,9 +137,9 @@ def check(cond, msg):
 
 opened = load("00-opened")
 check(opened["tabs"] == 2, f"00-opened: expected 2 tabs, got {opened['tabs']}")
-check(len(opened["blocks"]) == 1, f"00-opened: expected 1 live block (initial prompt), got {len(opened['blocks'])}")
-if opened["blocks"]:
-    check(opened["blocks"][0]["state"] == "live", f"00-opened: expected block 1 state=live, got {opened['blocks'][0]['state']}")
+# Blocks open at OSC 133;C, not 133;A (lcarcat-ba0): sitting at a fresh prompt
+# with nothing run yet must leave no frame on screen at all.
+check(len(opened["blocks"]) == 0, f"00-opened: expected no blocks before any command runs, got {len(opened['blocks'])}")
 
 after_ls = load("01-after-ls")
 check(len(after_ls["blocks"]) >= 1, "01-after-ls: expected at least 1 block")
@@ -149,12 +150,30 @@ check(b1["exit_code"] == 0, f"01-after-ls: expected block 1 exit_code=0, got {b1
 check(b1["line_count"] >= 1, f"01-after-ls: expected block 1 line_count>=1, got {b1['line_count']}")
 check(after_ls["cursor_at_end"], "01-after-ls: expected display window to auto-scroll to the last line")
 
+# cwd hole chip: $HOME collapsed to "~" dynamically, never an absolute /Users path.
+check(b1["cwd"], f"01-after-ls: expected a cwd on block 1, got {b1['cwd']!r}")
+if b1["cwd"]:
+    check(not b1["cwd"].startswith("/Users/"),
+          f"01-after-ls: cwd should collapse $HOME to ~, got {b1['cwd']!r}")
+    check(b1["cwd"].startswith("~") or not b1["cwd"].startswith("/home/"),
+          f"01-after-ls: cwd should collapse $HOME to ~, got {b1['cwd']!r}")
+
+# Chips arrive over OSC 7337 and are tagged with their kind. "err" must never be
+# among them: precmd's exit code belongs to the previous command, so exit status
+# is reported on the footer of its own block instead.
+KNOWN = {"venv", "py", "aws", "awsdep", "git", "gitstate"}
+check("err" not in b1["chips"], f"01-after-ls: header chips must not carry 'err', got {b1['chips']}")
+check(all(k in KNOWN for k in b1["chips"]),
+      f"01-after-ls: unexpected chip kind in {b1['chips']}")
+
 after_false = load("02-after-false")
 check(len(after_false["blocks"]) >= 2, "02-after-false: expected at least 2 blocks")
 b2 = after_false["blocks"][1]
 check(b2["state"] == "failed", f"02-after-false: expected block 2 state=failed, got {b2['state']}")
 check(b2["command"] == "false", f"02-after-false: expected block 2 command='false', got {b2['command']!r}")
 check(b2["exit_code"] == 1, f"02-after-false: expected block 2 exit_code=1, got {b2['exit_code']}")
+# A failed block keeps normal chrome; the ERR chip on its footer is the signal.
+check("err" not in b2["chips"], f"02-after-false: header chips must not carry 'err', got {b2['chips']}")
 
 reused = load("03-reused")
 check(reused["tabs"] == 2, f"03-reused: expected tabs to stay at 2 (session reused), got {reused['tabs']}")

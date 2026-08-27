@@ -82,21 +82,43 @@ OSC 133 marks (emitted by kitty shell integration) drive the block lifecycle:
 
 ```
 A (prompt start)
-  → create block_record, render header in sage (live) via frame_buffer.open_block
+  → create block_record — but do NOT render anything yet (see below)
+
+7 (cwd) / 7337 (chips)
+  → populate rec.cwd and rec.chips while the prompt draws
 
 B (command start)
   → note: command text comes from term_input.submit(), NOT from PTY bytes
   → pty_session suppresses echoed input lines between B and C (skip_lines=true)
 
 C (command exec)
+  → frame_buffer.open_block(rec) — header renders here, in sage (live)
   → open content region; start appending output lines via frame_buffer.append_line
   → record rec.command_start = vim.uv.hrtime()
 
 D;N (command done, exit code N)
   → record rec.command_end, rec.duration = command_end - command_start
   → set rec.state = (N==0) and "done" or "failed", rec.exit_code = N
+  → append the duration chip (block_chips.append_duration)
   → frame_buffer.close_block(rec) — re-renders header, writes 1-row footer
 ```
+
+### Why the block renders at C, not A (lcarcat-ba0)
+
+The obvious place to open the block is A — the prompt is drawing, a new block is
+beginning. It renders badly in practice:
+
+- The command text is not known at A. `term_input.submit()` sets `rec.command`
+  *after* the header has already been drawn, and nothing re-renders until
+  `close_block`. So the header sat there with a blank command line for the
+  entire run of the command, filling in only once it finished.
+- An empty header sat on screen for however long you took to type.
+- A prompt that never runs a command — bare Enter, Ctrl-C — left an orphan
+  header with no command and no footer.
+
+By C, `rec.command` and `rec.chips` are both populated, so the header is drawn
+once and correct. `rec.buf_start` is nil until `open_block` runs, which is what
+`on_output_line` and `on_command_done` test to know whether a frame exists.
 
 State → chrome color:
 
@@ -104,7 +126,104 @@ State → chrome color:
 |--------|-----------------|-------------|
 | live   | sage            | sage        |
 | done   | periwinkle      | periwinkle  |
-| failed | red             | red         |
+| failed | periwinkle      | periwinkle  |
+
+`failed` is deliberately identical to `done` — see "Footer: what the block did"
+below for why, and where the failure actually shows.
+
+---
+
+## OSC 7337 — semantic chip payload
+
+Block headers carry the same chips as the kitty swoop bar (branch, venv, python,
+AWS profile, git state). The shell already computes all of it in
+`_lcars_swoop_precmd`, so nvim asks for the values rather than recomputing them
+— no duplicate `git status` per prompt, and no blocking the UI on a subprocess.
+
+Inside `:LcarsTerm` there are no kitty graphics, so `_lcars_graphics_ok` is
+false and the prompt takes its plain-text fallback path. The chip payload is
+emitted on *both* paths, right after `OSC 133;A`:
+
+```
+ESC ] 7337 ; lcars ; chips [ ; <kind> ; <label> ]... ST
+```
+
+- **Flat pairs.** Everything after `chips` is alternating kind/label separated
+  by `;`. An empty chip set is the bare `7337;lcars;chips` with no trailing
+  `;` — it still fires, so a stale chip list gets cleared.
+- **Percent-encoding.** `;` is the field separator, so `;` and `%` are
+  percent-encoded in labels (git branch names may legally contain either).
+- **Kinds, not colors.** The shell names what a chip *means* (`venv`, `py`,
+  `aws`, `awsdep`, `git`, `gitstate`); `block_chips.lua` maps kind →
+  highlight group. The palette stays a neovim concern. An unrecognized kind
+  still renders, in the default chip color, rather than vanishing.
+- **No `err` chip.** The swoop bar has one, but the payload does not:
+  `precmd` runs *after* a command, so its `$?` belongs to the command that just
+  finished — while these chips attach to the block about to open, i.e. the next
+  one. Exit status is reported on the correct block's own footer instead.
+- **Safe to emit anywhere.** Terminals that don't know OSC 7337 ignore it, so
+  the sequence goes out unconditionally, kitty included.
+
+### Header layout, and where the cwd goes
+
+The header bar mirrors the swoop bar's arrangement — `chips + fill + path` —
+so a block header and the standalone kitty prompt read as one system:
+
+```
+[elbow][blk][chip][blk][chip][blk] ... bar fill ... [~/cwd][2 bar cols][cap]
+```
+
+Colored chips are **left-aligned** from the elbow; each chip's trailing black
+gap combs with the next one's leading gap, so N chips draw N+1 gaps (the same
+rule as `_lcars_chips` in zsh). The cwd is a **hole chip** punched in the right
+end of the bar: black on both rows, Normal-colored text, never dropped — it is
+the block's address.
+
+`on_cwd` collapses `$HOME` to `~` with `fnamemodify(path, ":~")` rather than a
+hardcoded prefix, so the hole chip stays correct for any user on any machine.
+
+### Footer: what the block did
+
+The header describes *where* a command ran; the single-row footer describes
+*what it did*, as chips left-aligned from the footer elbow — same run geometry
+as the header, via the shared `chip_run()`:
+
+```
+[felbow][blk][2.5S][blk][ERR-01][blk] ... bar fill ... [cap]
+```
+
+- **duration** — only past `CMD_DURATION_THRESHOLD` (milliseconds, default
+  2000). This is the same knob and default the swoop bar uses for its
+  end-of-command timestamp line, so both surfaces agree on what "slow" means.
+  Read from nvim's environment at load; `block_chips.duration_threshold_ms` can
+  be reassigned at runtime.
+- **`ERR-NN`** — only on a nonzero exit. Success is the default and gets no
+  chip.
+
+A quick successful command therefore has an empty footer, which is the point.
+
+Both are derived from the finished `block_record` by `block_chips.outcome()`,
+not stored on it.
+
+A failed block **keeps normal periwinkle chrome**. Painting the whole frame red
+for every `grep` that matched nothing drowns out the blocks that actually went
+wrong, so the red `ERR-NN` chip carries the signal alone.
+`LcarsTermFrameFailed`/`LcarsTermStemFailed` still exist in the colorscheme if
+the loud treatment is ever wanted back.
+
+### Overflow
+
+`header_chips()` has no width limit of its own, and a full set (branch + three
+git-state chips + venv + py + aws) overruns a default 60-column bar once the
+cwd hole chip has taken its share. `frame_renderer.fit_chips` sheds whole
+groups, lowest value first — `aws, awsdep, py, gitstate, venv, git` —
+mirroring the swoop bar's own drop order in `prompt_lcars.zsh`. Kinds not in
+that list shed after them; untagged chips (`block_demo`'s fixed lists) shed
+last. The cwd is charged against the budget by `chips_avail()` rather than
+competing for it, so it never drops.
+
+`chips_width()` mirrors `header_chips()`'s placement arithmetic exactly — if
+you change one, change the other.
 
 ---
 
@@ -194,7 +313,8 @@ flush with the frame's right edge — and col 173 is empty. Regression-tested by
 | `image_registry.lua` | Transmit elbow/hcap PNGs once per session via APC escape; cache `(asset, cw, ch)` → kitty image ID. |
 | `frame_renderer.lua` | Pure render: given `(buf, start_row, rec)` write lines and return row count. Calls image_registry for placeholder cells. Uses baleia for content lines. |
 | `frame_buffer.lua` | Owns the display buffer (`modifiable=false` except during writes). `open_block`, `append_line`, `close_block`. |
-| `pty_session.lua` | `jobstart(shell, {pty=true})`. Carry-buffer for split chunks. OSC 133 state machine. `M.send(text)` → `chansend`. |
+| `pty_session.lua` | `jobstart(shell, {pty=true})`. Carry-buffer for split chunks. OSC 133 / 7 / 7337 state machine. `M.send(text)` → `chansend`. |
+| `block_chips.lua` | Chip kind → highlight group; duration label formatting. The one place shell chip semantics become LCARS colors. |
 | `term_input.lua` | Orange-stem input split. `M.open(buf, opts)` configures a buffer/window created by the caller (does not call `nvim_open_win` itself). `opts.on_submit(cmd_text)` is a plain callback — term_input never requires `pty_session` or `terminal_win` by name. Telescope history. Does not touch `command_buffer.lua`. |
 | `terminal_win.lua` | Layout: display split (top) + input split (bottom). Wires pty_session callbacks to frame_buffer. `:LcarsTerm` command. |
 

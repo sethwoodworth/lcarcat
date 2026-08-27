@@ -268,11 +268,14 @@ _lcars_git_counts() {
 }
 
 # Compact branch + indicators, for the plain non-graphics fallback prompt only.
+# Args: <branch> <staged> <modified> <untracked>. The caller has already
+# gathered these (see the shared segment block in _lcars_swoop_precmd), so this
+# no longer shells out to git a second time.
 _lcars_git_seg() {
-  local branch; branch=$(_lcars_git_branch) || return
+  local branch=$1
   [[ -z $branch ]] && return
-  local -a c; c=(${(s: :)$(_lcars_git_counts)}); local ind=""
-  (( c[1] )) && ind+='+'; (( c[2] )) && ind+='!'; (( c[3] )) && ind+='?'
+  local ind=""
+  (( $2 )) && ind+='+'; (( $3 )) && ind+='!'; (( $4 )) && ind+='?'
   print -rn -- "${branch}${ind:+ $ind}"
 }
 
@@ -288,6 +291,28 @@ _lcars_py_seg() {
 _lcars_aws_seg() {
   [[ -z $AWS_PROFILE ]] && return
   print -rn -- " AWS|${AWS_PROFILE} "
+}
+
+# ---- OSC 7337: semantic chip payload for lcars.pty_session -----------------
+# The kitty swoop bar draws its chips itself, as pixels. Inside :LcarsTerm there
+# are no graphics, so nvim's frame_renderer draws the block-header chips and
+# needs the *values* rather than the rendering. Body:
+#
+#   ESC ] 7337 ; lcars ; chips [ ; <kind> ; <label> ]... ST
+#
+# The shell names what a chip means (err/venv/py/aws/awsdep/git/gitstate);
+# nvim/lua/lcars/block_chips.lua maps kind -> highlight group, so colors stay a
+# neovim concern. `;` separates fields, so `;` and `%` are percent-encoded in
+# labels (branch names may legally contain either). Terminals that don't know
+# OSC 7337 ignore it, which makes this safe to emit unconditionally.
+_lcars_emit_chips() {
+  local out="" lbl
+  local -i i
+  for (( i=1; i<=$#; i+=2 )); do
+    lbl=${argv[i+1]//\%/%25}
+    out+=";${argv[i]};${lbl//;/%3B}"
+  done
+  printf '\e]7337;lcars;chips%s\e\\' "$out"
 }
 
 # ---- render one bar row of Style-B chips (text row) or blanks (other row) ---
@@ -345,8 +370,49 @@ _lcars_swoop_precmd() {
     _LCARS_CELL_DIRTY=
   fi
 
+  # ---- segment values, shared by both render paths -------------------------
+  # Gathered before the graphics check because both the kitty swoop bar and the
+  # OSC 7337 chip payload are built from them, and neither path should pay for a
+  # second round of git subprocesses.
+  # (note: `status` is a read-only special in zsh -> use `estat`)
+  local venv="" py gbranch estat cwd aws
+  local -a gc chip_kv
+  [[ -n $VIRTUAL_ENV ]] && venv="${VIRTUAL_ENV:t}"
+  [[ -z $venv && -f pyproject.toml && -d .venv ]] && venv="uv"
+  py=$(_lcars_py_seg); gbranch=$(_lcars_git_branch)
+  (( last_exit != 0 )) && estat="$last_exit"
+  cwd="${(%):-%~}"
+  aws=$(_lcars_aws_seg)
+  if [[ -n $gbranch ]]; then gc=(${(s: :)$(_lcars_git_counts)}); else gc=(0 0 0); fi
+
+  # Flat kind/label pairs for _lcars_emit_chips, in the same left-to-right order
+  # the swoop bar uses. Labels carry no padding: frame_renderer's chips_block
+  # adds its own. `printf -v` keeps the git-state labels fork-free.
+  # No `err` chip: precmd runs *after* the command, so $estat is the exit code
+  # of the command that just finished — but these chips get attached to the
+  # block that is about to open, i.e. the next one. nvim reports exit status on
+  # the correct block itself, as a footer chip (block_chips.outcome). The swoop
+  # bar keeps its own error chip below, where "the command that just ran" is
+  # exactly the right meaning.
+  local _cs
+  [[ -n $venv  ]] && chip_kv+=(venv "$venv")
+  [[ -n $py    ]] && chip_kv+=(py "$py")
+  if [[ -n $AWS_PROFILE ]]; then
+    if [[ $AWS_PROFILE == dep ]]; then
+      chip_kv+=(awsdep "AWS|${AWS_PROFILE}")
+    else
+      chip_kv+=(aws "AWS|${AWS_PROFILE}")
+    fi
+  fi
+  if [[ -n $gbranch ]]; then
+    chip_kv+=(git "$gbranch")
+    (( gc[1] )) && { printf -v _cs '%02d-%s' $gc[1] $_LC_GIT_STAGED;    chip_kv+=(gitstate "$_cs") }
+    (( gc[2] )) && { printf -v _cs '%02d-%s' $gc[2] $_LC_GIT_MODIFIED;  chip_kv+=(gitstate "$_cs") }
+    (( gc[3] )) && { printf -v _cs '%02d-%s' $gc[3] $_LC_GIT_UNTRACKED; chip_kv+=(gitstate "$_cs") }
+  fi
+
   if ! _lcars_graphics_ok; then
-    local gi; gi=$(_lcars_git_seg)
+    local gi; gi=$(_lcars_git_seg "$gbranch" $gc[1] $gc[2] $gc[3])
     local aw=""
     if [[ -n $AWS_PROFILE ]]; then
       local aw_color="#ff9933"; [[ $AWS_PROFILE == dep ]] && aw_color="#ff3300"
@@ -360,6 +426,7 @@ _lcars_swoop_precmd() {
     # input, which also swallows this PROMPT's own rendered bytes until
     # preexec's closing OSC 133;C (see _lcars_swoop_preexec).
     printf '\e]133;A\e\\'
+    _lcars_emit_chips "${chip_kv[@]}"
     printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD"
     printf '\e]133;B\e\\'
     return
@@ -404,16 +471,7 @@ _lcars_swoop_precmd() {
     _LCARS_CMD_RAN=
   fi
 
-  # 2) Gather segments.  (note: `status` is a read-only special in zsh -> use `estat`)
-  local venv="" py gbranch estat cwd aws
-  [[ -n $VIRTUAL_ENV ]] && venv="${VIRTUAL_ENV:t}"
-  [[ -z $venv && -f pyproject.toml && -d .venv ]] && venv="uv"
-  py=$(_lcars_py_seg); gbranch=$(_lcars_git_branch)
-  (( last_exit != 0 )) && estat="$last_exit"
-  cwd="${(%):-%~}"
-  aws=$(_lcars_aws_seg)
-
-  # Build chip groups (label text incl. padding, color).
+  # 2) Build chip groups (label text incl. padding, color).
   # Groups are assembled separately so they can be dropped in priority order when the
   # bar is too narrow. Drop order (lowest priority first): aws, py, git-state, venv, branch.
   # The error chip is never dropped.
@@ -428,7 +486,6 @@ _lcars_swoop_precmd() {
   fi
   if [[ -n $gbranch ]]; then
     chips_branch=(" $gbranch " "$_LC_GOLD")
-    local -a gc; gc=(${(s: :)$(_lcars_git_counts)})
     (( gc[1] )) && chips_state+=(" $(printf '%02d-%s' $gc[1] $_LC_GIT_STAGED) "    "$_LC_GOLD")
     (( gc[2] )) && chips_state+=(" $(printf '%02d-%s' $gc[2] $_LC_GIT_MODIFIED) "  "$_LC_GOLD")
     (( gc[3] )) && chips_state+=(" $(printf '%02d-%s' $gc[3] $_LC_GIT_UNTRACKED) " "$_LC_GOLD")
@@ -535,6 +592,7 @@ _lcars_swoop_precmd() {
   # as a command's output; B then suppresses the elbow-stem PROMPT bytes
   # above the same way it suppresses echoed input, until preexec's OSC 133;C.
   printf '\e]133;A\e\\'
+  _lcars_emit_chips "${chip_kv[@]}"
   printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD"
   printf '\e]133;B\e\\'
 }

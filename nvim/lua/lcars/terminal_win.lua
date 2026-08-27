@@ -14,6 +14,7 @@ local frame_buffer  = require("lcars.frame_buffer")
 local pty_session   = require("lcars.pty_session")
 local term_input    = require("lcars.term_input")
 local block_record  = require("lcars.block_record")
+local block_chips   = require("lcars.block_chips")
 local assets        = require("lcars.assets")
 
 local AUGROUP = "LcarsTerminalWin"
@@ -84,21 +85,34 @@ end
 
 local function make_callbacks(fb)
   return {
+    -- OSC 133;A. The record is created here — on_cwd and on_chips both arrive
+    -- while the prompt is drawing, before the command is known — but the block
+    -- is deliberately NOT rendered yet. See on_command_exec (lcarcat-ba0).
     on_prompt_start = function()
       state.rec = block_record.new(next_id())
       state.rec.state = "live"
+    end,
+
+    -- OSC 133;C. This, not 133;A, is where the block appears.
+    --
+    -- Opening at prompt time left an empty header sitting on screen for as long
+    -- as you took to type, and — since M.submit() sets rec.command after the
+    -- header had already rendered — with a blank command line for the whole run
+    -- of the command, filled in only at close_block. Deferring to 133;C means
+    -- rec.command and rec.chips are both populated by the time render_header
+    -- runs, so the header is drawn once, correct. A prompt that never runs a
+    -- command (bare Enter, Ctrl-C) now leaves no orphan frame behind.
+    on_command_exec = function()
+      if not state.rec then return end
+      state.rec.command_start = vim.uv.hrtime() / 1e9
       fb.open_block(state.rec)
       scroll_display_to_end(fb)
     end,
 
-    on_command_exec = function()
-      if state.rec then
-        state.rec.command_start = vim.uv.hrtime() / 1e9
-      end
-    end,
-
+    -- rec.buf_start is set by open_block, so it doubles as "the block is on
+    -- screen" — output arriving before 133;C has nowhere to go.
     on_output_line = function(line)
-      if state.rec then
+      if state.rec and state.rec.buf_start then
         fb.append_line(state.rec, line)
         scroll_display_to_end(fb)
       end
@@ -106,17 +120,34 @@ local function make_callbacks(fb)
 
     on_command_done = function(exit_code)
       if not state.rec then return end
+      if not state.rec.buf_start then
+        -- 133;D with no preceding 133;C: nothing was ever rendered, so there is
+        -- no frame to close. Drop the record rather than closing a phantom.
+        state.rec = nil
+        return
+      end
       state.rec.command_end = vim.uv.hrtime() / 1e9
       state.rec.duration    = state.rec.command_end - state.rec.command_start
       state.rec.state       = (exit_code == 0) and "done" or "failed"
       state.rec.exit_code   = exit_code
+      -- Duration and exit code are drawn as footer chips, built from the
+      -- record by block_chips.outcome() inside render_footer — nothing to
+      -- attach here.
       fb.close_block(state.rec)
       scroll_display_to_end(fb)
       state.rec = nil
     end,
 
+    -- OSC 7 carries an absolute path. Shorten $HOME to "~" via fnamemodify
+    -- rather than a hardcoded prefix, so the hole chip stays correct for any
+    -- user on any machine.
     on_cwd = function(path)
-      if state.rec then state.rec.cwd = path end
+      if state.rec then state.rec.cwd = vim.fn.fnamemodify(path, ":~") end
+    end,
+
+    -- OSC 7337 — branch/venv/py/aws chips computed by the shell's precmd.
+    on_chips = function(chips)
+      if state.rec then state.rec.chips = block_chips.from_osc(chips) end
     end,
   }
 end

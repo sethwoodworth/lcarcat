@@ -21,9 +21,11 @@ local STEM_W   = 1
 local GUTTER_W = 1
 local HL_PRI   = 200
 
+-- "failed" is not painted red: a nonzero exit shows as the ERR chip on the
+-- footer instead of repainting the block. Mirrors frame_renderer.stem_hl —
+-- keep the two in step.
 local function stem_hl(state)
-  if state == "live"   then return "LcarsTermStemLive"   end
-  if state == "failed" then return "LcarsTermStemFailed" end
+  if state == "live" then return "LcarsTermStemLive" end
   return "LcarsTermBar"
 end
 
