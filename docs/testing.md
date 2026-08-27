@@ -76,12 +76,26 @@ Drives a detached kitty instance via `kitty @ --to SOCK` remote control. Capture
 | `LCARCAT_SHOT_DIR` | `/tmp/lcarcat-screenshots` | Screenshot output directory |
 | `LCARCAT_TEST_DISPLAY` | (unset) | Set to `external` to move window to external display |
 | `TEST_CONF` | `test/kitty_test.conf` | kitty config for the test instance |
+| `LCARCAT_SKIP_SCREENSHOTS` | (unset) | Set to `1` to skip every `snapshot` call. Honored by the `test/integration/` scripts that capture (`term_input.sh`, `terminal_win.sh`, `terminal_win_pty_width.sh`) |
+| `LCARCAT_KEEP_ALIVE` | (unset) | Set to `1` to suppress the teardown trap in `nvim_harness_setup`, leaving kitty up for post-run probing |
 
 ### How it works
 
 1. `launch` starts kitty with `--detach`, waits up to 5s for the socket to appear, writes the PID.
 2. `snapshot` reads the CGWindowID from `kitty @ ls` (the `platform_window_id` field), then calls `screencapture -l<id> -x <outfile>`. Waits 0.4s for the window to settle before capturing.
 3. `teardown` is idempotent — safe to run when no test kitty is up. Politely closes windows first; force-kills if kitty is still alive after 2s.
+
+### When `snapshot` fails: `could not create image from window`
+
+That message is from macOS `screencapture`: the terminal hosting the test run
+lacks **Screen Recording** permission (System Settings → Privacy & Security →
+Screen Recording). It is not a harness or kitty bug, and it affects every
+capture, including a bare `screenshot_harness.sh snapshot`.
+
+It matters more than it looks: scenario scripts run under `set -euo pipefail`,
+so a failed snapshot aborts the whole run before the assertions execute. Run
+assertion-bearing tests with `LCARCAT_SKIP_SCREENSHOTS=1` when the host lacks
+the permission — the pass/fail checks do not depend on the PNGs.
 
 ### `id:N` vs `recent:N` lesson
 
@@ -105,6 +119,33 @@ Minimal kitty config for test runs. Loads the LCARS theme and uses Fantasque San
 The `rich_demo.sh` scenario uses `test/kitty_demo.conf` instead — 1600×900 with tab bar enabled.
 
 ---
+
+## Measuring rendered output (width and content assertions)
+
+**`block_record.lines` are raw PTY bytes, including ANSI.** baleia strips the
+escape sequences only when writing into the buffer (`frame_buffer.append_line`
+calls `baleia.buf_set_lines`). So `#line` / `len(line)` over `rec.lines` counts
+escape bytes and wildly overstates the rendered width — a colorized `ls` line
+that renders as 118 cols measures 203.
+
+Pick the right source for what you are asserting:
+
+| Asserting about | Read | Measure with |
+|-----------------|------|--------------|
+| what the PTY emitted | `rec.lines` | strip ANSI first |
+| what is on screen | `nvim_buf_get_lines` | `vim.fn.strdisplaywidth` |
+| what the terminal model holds | `get_cell_grid.py` | cell records |
+
+A regex that works for the stripping case:
+
+```python
+ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+```
+
+When comparing a max buffer line width against frame geometry, remember that
+header/footer rows are one char wider than a full-width content line (the
+trailing pad space past the bar). See "Frame geometry and coordinate systems"
+in `docs/nvim-terminal-frame.md` for the exact numbers.
 
 ## Pixel and semantic color tools
 
@@ -194,6 +235,13 @@ print(wins[-1])
 ```
 
 For a scenario with multiple panes, parse by `is_self`, `is_focused`, or position in `t["windows"]` rather than assuming `wins[-1]`.
+
+**Caveat — the `Grid: N rows x M cols` header.** `M` is
+`max(len(row) for row in grid)`, the longest *parsed* row, not the terminal
+width. Rows holding kitty graphics placeholders parse long, so a 181-col
+terminal can report `362 cols`. This does not mean column indexing is skewed:
+`--col N` still maps to terminal col `N` for ordinary text rows. Do not
+"correct" for it.
 
 **When to use:** When you want to confirm the terminal *model* has the right color — i.e., that the highlight group chain in nvim actually emitted the right SGR. Use this alongside a pixel check when debugging a gutter color regression.
 

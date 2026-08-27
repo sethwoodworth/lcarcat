@@ -108,6 +108,84 @@ State → chrome color:
 
 ---
 
+## Frame geometry and coordinate systems
+
+Three coordinate spaces are in play, and mixing them is the single most common
+source of off-by-one bugs in this subsystem. Read this before touching
+`frame_renderer.lua`, `frame_buffer.lua`, or `terminal_win.lua`.
+
+| Space | 0 is at | Used by |
+|-------|---------|---------|
+| **kitty terminal col** | left edge of the kitty window | `test/get_cell_grid.py`, `test/overlay_grid.py` |
+| **nvim window col** | left edge of the nvim window, **gutter included** | `lp`, `bar_x0`, `cap_x`, `virt_text_win_col`, image placement |
+| **buffer byte col** | first byte of the buffer line | `nvim_buf_set_lines`, byte-based extmarks |
+
+`window col = buffer byte col + GUTTER_W`, with `GUTTER_W = 1`.
+
+That gutter is **not** the sign column — `terminal_win.lua` sets
+`signcolumn = "no"`. It comes from the global `statuscolumn` in
+`nvim/colors/lcars.lua` (`"%#LineNr#%=%l%#LineNr# "`), which is set once and
+never varies, so the code hardcodes `GUTTER_W = 1` rather than reading
+`textoff`. See the comment at `block_demo.lua:681`.
+
+Consequences worth memorizing:
+
+- `nvim_win_get_width()` **includes** the gutter.
+- Byte-based `hl_group` extmarks subtract `GUTTER_W` once (`frame_renderer.hl`).
+- `virt_text_win_col` is already a window col — **no** subtraction.
+- `registry.place()` subtracts `GUTTER_W` for image placement.
+
+### Derived geometry
+
+With `lp = 6` (left pad) and `BAR_MARGIN = 14` (the slice the bar does not use,
+reserving room for the elbow and cap images):
+
+| Element | Window cols | Notes |
+|---------|-------------|-------|
+| stem | `lp` | 1 col, solid `hl_group`, no glyph |
+| header/footer bar | `lp` .. `lp+bw-1` | `bw = win_width - BAR_MARGIN` |
+| header bar *fill* (colored) | `lp+ELBOW_W-1` .. `cap_x-1` | stops where the vcap image starts |
+| header vcap image | `lp+bw-CAP_W` .. `lp+bw-1` | `CAP_W = 2`, spans both bar rows |
+| footer cap image | `lp+bw-FCAP_W` | `FCAP_W = 1` |
+| content text | `lp+2` .. `lp+bw-1` | see below |
+
+Content text starts at `lp+2`, not `lp+1`: `render_content` and
+`append_line` write an `lp+1`-space prefix in **buffer** cols, which is window
+col `lp+2`. So:
+
+```
+content_width = bw - 2
+```
+
+That is what `terminal_win.geometry()` returns and what must be handed to
+`pty_session.start()` as the PTY width — see "Wiring notes" below.
+
+Two subtleties that look like bugs but are not:
+
+- The **colored** bar stops one or two cols short of the bar's right edge,
+  because the last `CAP_W`/`FCAP_W` cols are left uncolored for the cap image
+  to occupy. The frame's visual right edge is the cap, at `lp+bw-1`.
+- Header/footer **buffer lines** are `lp+bw` chars long — one char longer than a
+  full-width content line — because `pad(lp) .. bar(bw)` carries a trailing
+  uncolored space just past the bar's right edge.
+
+### Worked example (verified)
+
+At `win_width = 181`, measured live via `test/get_cell_grid.py`:
+
+```
+bw            = 181 - 14 = 167
+content_width = 167 - 2  = 165      <- `tput cols` inside the PTY reports this
+stem          = window col 6
+content text  = window cols 8 .. 172
+header vcap   = window cols 171-172   footer cap = window col 172
+visible text  = 180 cols (win_width - GUTTER_W)
+```
+
+A line of exactly `$COLUMNS` chars puts its last char at terminal col 172 —
+flush with the frame's right edge — and col 173 is empty. Regression-tested by
+`test/integration/terminal_win_pty_width.sh`.
+
 ## File map
 
 | File | Responsibility |

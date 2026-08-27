@@ -14,6 +14,7 @@ How to drive nvim via the kitty remote-control socket from shell scripts (scenar
 | Screenshot shows the wrong state | Check `:messages` before taking the screenshot |
 | Image from previous tab still visible | TabEnter re-render with `vim.schedule` — or explicit `img:clear()` sweep |
 | E5108 "Invalid 'line': out of range" | Two-pass rule violated — see below |
+| Need to know which column something rendered in | Probe the live session with `get_cell_grid.py` — section 11, not a screenshot |
 
 ---
 
@@ -403,6 +404,55 @@ On the stub row, behind the elbow image:
 - **Do not** extend `LcarsBlockBar` onto the stub row — bars only cover the 2 bar rows.
 
 The cmd text on the stub row (`mark_at`) must start at `lp + ELBOW_W` (col `lp+5`) to clear the entire fillet region. Starting it earlier covers fillet cols with the `LcarsBlockBg` virt_text background, hiding the fillet.
+
+---
+
+## 11. Probing a live session without screenshots
+
+Screenshots are the expensive way to answer a geometry question: capture, then
+overlay a grid, then have a subagent read the PNG. For "which column does this
+land in?" the terminal model answers directly, in text, for ~200 tokens — and it
+works when `screencapture` has no Screen Recording permission.
+
+Keep kitty up after the scenario, then query it:
+
+```bash
+LCARCAT_KEEP_ALIVE=1 LCARCAT_SKIP_SCREENSHOTS=1 bash test/integration/foo.sh
+```
+
+`LCARCAT_KEEP_ALIVE=1` suppresses the teardown trap in `nvim_harness_setup`, so
+the socket stays live for follow-up queries.
+
+```bash
+SOCK=unix:/tmp/lcarcat-test.sock
+WIN=$(kitty @ --to "$SOCK" ls | python3 -c 'import sys,json;d=json.load(sys.stdin);print([w["id"] for o in d for t in o["tabs"] for w in t["windows"]][-1])')
+
+# which rows in this column are not background?
+python3 test/get_cell_grid.py --socket "$SOCK" --window "$WIN" --col 172 --verbose \
+  | awk 'NF>=3 && $NF!="black" {print}'
+
+# sweep a few columns to find an edge — where does content stop?
+for col in 170 171 172 173; do
+  n=$(python3 test/get_cell_grid.py --socket "$SOCK" --window "$WIN" --col $col --verbose \
+      | grep -c "'#'")
+  echo "col $col: $n"
+done
+```
+
+The `awk`/`grep -c` filters are the point: they keep a 57-row dump from landing
+in the main loop's context. Filter to the question, not the table — see the
+"Context discipline" section in `AGENTS.md`.
+
+Two gotchas:
+
+- Quote the char you grep for (`"'#'"`), not the bare character. The verbose
+  output prints chars quoted, and bare `#` also matches every `#rrggbb` color.
+- Row 0 is usually the tabline and the last row the statusline, so stray
+  periwinkle/orange hits there are chrome, not your frame.
+
+Remember the display auto-scrolls to the newest block: after a command with long
+output, an earlier block is off-screen and the grid cannot see it. Re-run the
+thing you want to inspect so it is the last thing drawn.
 
 ---
 
