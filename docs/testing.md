@@ -276,6 +276,8 @@ Each script exits 0 on pass, 1 on failure. Safe to run in CI or as a pre-commit 
 | `nvim_eob_gutter.sh` | Column 0 is periwinkle for all rows (short file, no scroll) |
 | `nvim_eob_gutter_scrolled.sh` | Column 0 stays periwinkle after `G`+`zt` scroll to EOF |
 | `cmd_buffer_target_pane.sh` | Submitted text reaches RIGHT pane; LEFT pane is clean (regression: lcarcat-08g.1) |
+| `terminal_win.sh` | `:LcarsTerm` round-trips real commands through the PTY; session reuse and teardown (lcarcat-2z9) |
+| `terminal_win_pty_width.sh` | PTY `COLUMNS` equals the frame's content width; wide output stays inside the bar (regression: lcarcat-wve) |
 
 Run all integration tests:
 ```bash

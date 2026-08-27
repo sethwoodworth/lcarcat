@@ -184,7 +184,7 @@ callbacks = {
 `term_input.lua` never requires `pty_session` or `terminal_win` by name — see
 "Why `term_input.lua` takes a callback, not a module reference" above.
 
-**Window layout:** Display buffer in top split (`modifiable=false`, `signcolumn=no`). Input split below (fixed height, `signcolumn=yes:1` for orange stem). Pass actual window `width` and `height` to `pty_session.start()` via `opts`.
+**Window layout:** Display buffer in top split (`modifiable=false`, `signcolumn=no`). Input split below (fixed height, `signcolumn=yes:1` for orange stem). Pass the frame's **content width** — not the raw window width — plus the window `height` to `pty_session.start()` via `opts`. With `lp = 6` and `bw = win_width - 14`, content text runs from window col `lp+2` to the bar's right edge, so the PTY gets `bw - 2` columns. Handing it the raw window width makes `ls` and friends format to space the frame does not have, and `wrap=false` clips the overflow invisibly (lcarcat-wve).
 
 **opts for frame_buffer.new():** Pass `win`, `cw`, `ch` from the display split so images are placed correctly from the start. `cw`/`ch` from `require("lcars.assets").cell_px()`.
 

@@ -18,6 +18,29 @@ local assets        = require("lcars.assets")
 
 local AUGROUP = "LcarsTerminalWin"
 
+-- Frame geometry, in window cols from window-left (0-indexed, gutter included —
+-- same convention as frame_renderer).
+--
+--   lp .. lp+bw-1     the header/footer bar
+--   lp+2 .. lp+bw-1   content text (frame_buffer writes an lp+1-space prefix in
+--                     buffer cols, which is lp+2 in window cols)
+--
+-- BAR_MARGIN is the slice of the window the bar does not use, reserving room
+-- for the header elbow + right cap images.
+local LP         = 6
+local BAR_MARGIN = 14
+
+-- geometry(win) → lp, bw, content_width
+--
+-- content_width is what the PTY must be told (COLUMNS / TIOCGWINSZ): the number
+-- of columns a content line can occupy before it runs past the bar's right edge.
+-- The display window has wrap=false, so anything wider is clipped off-screen
+-- rather than wrapping (lcarcat-wve).
+local function geometry(win)
+  local bw = vim.api.nvim_win_get_width(win) - BAR_MARGIN
+  return LP, bw, bw - 2
+end
+
 local _next_id = 0
 local function next_id()
   _next_id = _next_id + 1
@@ -126,10 +149,10 @@ function M.open()
   local display_win = vim.api.nvim_get_current_win()
 
   local cw, ch = assets.cell_px()
-  local bw     = vim.api.nvim_win_get_width(display_win) - 14
+  local lp, bw, content_width = geometry(display_win)
   local ns     = vim.api.nvim_create_namespace("lcars_terminal_win")
 
-  frame_buffer.new({ ns = ns, lp = 6, bw = bw, win = display_win, cw = cw, ch = ch })
+  frame_buffer.new({ ns = ns, lp = lp, bw = bw, win = display_win, cw = cw, ch = ch })
   vim.api.nvim_win_set_buf(display_win, frame_buffer.buf)
   vim.api.nvim_buf_set_name(frame_buffer.buf, "lcars://terminal_win/display")
 
@@ -187,15 +210,19 @@ function M.open()
     end,
   })
 
-  -- Real window geometry, not pty_session's 220x50 default, so the PTY
-  -- matches actual screen size from the start. Dynamic resize on
-  -- VimResized is deferred (lcarcat-qm0.5).
-  local width  = vim.api.nvim_win_get_width(display_win)
+  -- Real frame geometry, not pty_session's 220x50 default, so the PTY matches
+  -- actual screen size from the start. Width is the frame's content width, not
+  -- the raw window width: tools that size their output from COLUMNS (`ls`
+  -- columns, `git log --graph` wrapping) must fit between the stem and the
+  -- bar's right edge. Height stays the raw window height — the frame's chrome
+  -- eats rows too, but nothing scrolls the PTY's own screen yet, and a short
+  -- height would only shrink full-screen apps we don't support (lcarcat-wve).
+  -- Dynamic resize on VimResized is deferred (lcarcat-qm0.5).
   local height = vim.api.nvim_win_get_height(display_win)
 
   pty_session.start(
     shell_cmd,
-    { width = width, height = height },
+    { width = content_width, height = height },
     make_callbacks(frame_buffer)
   )
 
