@@ -2,7 +2,7 @@
 
 lcarcat has two complementary test layers:
 
-- **Headless unit tests** (`test/unit/`) — pure-Lua logic tests, no nvim display, no kitty required. Fast, deterministic, CI-runnable. Currently cover `pty_session._parse_chunk`.
+- **Headless unit tests** (`test/unit/`) — pure-Lua logic tests, no nvim display, no kitty required. Fast, deterministic, CI-runnable. Currently cover `pty_session._parse_chunk` and `block_chips` + `frame_renderer`'s chip fitting.
 - **Visual / screenshot tests** — kitty-harness-driven capture scripts and integration tests. Required for anything involving nvim rendering, image placement, or terminal interaction.
 
 This document is the entry point: what exists, and how to run it. The detail
@@ -39,6 +39,15 @@ A pixel check passing with a semantic check failing means the right color reache
 
 ## Headless unit tests
 
+> **Run these with `nvim --clean`, never `nvim -u NONE`.** `-u NONE` skips config
+> *files* but leaves `~/.config/nvim` on `'runtimepath'`, and nvim's package loader
+> searches rtp `lua/` dirs **before** `package.path`. Since `deploy.sh` copies
+> `lcars/*.lua` there, `require("lcars.X")` resolves to the *deployed* copy and the
+> suite silently tests whatever was last deployed instead of the working tree. This
+> bit us: newly added code appeared to do nothing at all. `package.searchpath` still
+> reports the repo path, because the rtp loader is a different searcher — so that is
+> not a reliable check either.
+
 ### test/unit/run_parser_tests.sh
 
 Tests `lcars.pty_session._parse_chunk` — the pure OSC 133 parser and carry-buffer logic.
@@ -51,6 +60,21 @@ Runs under `nvim --headless -u NONE`. No kitty, no display, no plugin dependenci
 
 **Test convention** (pattern for future headless tests):
 - Minimal pure-Lua runner in `test/unit/<module>_test.lua` — no busted or plenary.
+
+### test/unit/run_chips_tests.sh
+
+```bash
+bash test/unit/run_chips_tests.sh
+```
+
+Covers `lcars.block_chips` (OSC 7447 chip kind → highlight group, duration
+formatting and its `CMD_DURATION_THRESHOLD` knob, footer outcome chips) and
+`frame_renderer`'s chip geometry (`chips_width`, `chips_avail`, `fit_chips`
+drop-priority).
+
+Note the standing gap: `chips_width()` asserts against hand-computed numbers, not
+against `chip_run()`'s actual placement. The two are documented as mirrors and
+nothing enforces it — see `lcarcat-qm0.10`.
 - Call `vim.cmd("cq 1")` on any failure so nvim exits nonzero.
 - Expose the function under test as `M._function_name` in the module (Lua convention for semi-private testable functions).
 
