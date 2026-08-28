@@ -24,9 +24,12 @@
 #   02-shell-history  — left shell with ls/git scrollback + LCARS timestamps
 #   03-nvim-chrome    — right nvim focused; tabline pill, corner elbow, statusline
 #   04-cmd-buffer     — command buffer open; orange gutter + typed text
-#   05-full-layout    — all panes, nvim focused; canonical README hero shot
+#   05-full-layout    — all panes, nvim focused; full layout (see 08 for README use)
 #   06-tab-bar        — tab 2 active; orange-active vs periwinkle-inactive contrast
 #   07-cmd-submit     — after submit; command output in left shell scrollback
+#   08-hero           — canonical README hero: pane cleared and scrollback
+#                       rebuilt AFTER the final split, so no prompt carries a
+#                       stale pre-resize swoop bar
 #
 # Run:
 #   bash test/scenarios/rich_demo.sh
@@ -100,7 +103,11 @@ _wait 2.5
 "$H" snapshot "01-overview"
 
 # Open nvim in the right pane with the colorscheme source
-_at send-text --match "id:$WIN_NVIM" "nvim \"$DEMO_FILE\"\r"
+# -n: no swap file. A demo capture must never be able to hit nvim's
+# "Found a swap file ... [O]pen Read-Only, (E)dit anyway" recovery modal, which
+# blocks the pane with a dialog instead of showing the source. That happens
+# whenever a previous run's nvim did not exit cleanly.
+_at send-text --match "id:$WIN_NVIM" "nvim -n \"$DEMO_FILE\"\r"
 _wait 3.5
 
 # ---------------------------------------------------------------------------
@@ -109,6 +116,15 @@ _wait 3.5
 
 _at focus-window --match "id:$WIN_SHELL"
 _wait 0.4
+
+# No pager, anywhere in this pane. Shot 07 submits `git log --oneline -5` from
+# the command buffer without --no-pager, which leaves `less` sitting on the
+# pane; every later keystroke then goes to the pager instead of the shell.
+# ("ls -lh demos/" contains an `h`, which opens less's help screen — that is
+# how this pane ended up showing pager documentation in the hero shot.) It also
+# removes the bare "(END)" marker that showed up at the bottom of shots 05/07.
+_at send-text --match "id:$WIN_SHELL" "export GIT_PAGER=cat PAGER=cat && clear\r"
+_wait 0.8
 
 _at send-text --match "id:$WIN_SHELL" "ls -lh demos/\r"
 _wait 1.2
@@ -180,6 +196,35 @@ _wait 1.5
 _at focus-window --match "id:$WIN_SHELL"
 _wait 0.5
 "$H" snapshot "07-cmd-submit"
+
+# ---------------------------------------------------------------------------
+# shot 08: clean hero — every prompt drawn at the FINAL pane width
+#
+# Shots 01-07 all carry stale swoop bars in the left pane's scrollback: the
+# shell drew its first prompt at full window width, then the vsplit and the
+# hsplit each resized that pane, and the elbow/cap PNGs on already-drawn
+# prompts do not reflow (the known split-resize issue in ROADMAP.md). The
+# result is a mangled bar at the top of the left pane — fine for regression
+# shots, wrong for a README, where it advertises a bug as a feature.
+#
+# So: clear the pane once the layout is final, rebuild the scrollback, and
+# shoot again. Every bar in this one was drawn at the width it is displayed at.
+# ---------------------------------------------------------------------------
+
+_at focus-window --match "id:$WIN_SHELL"
+_wait 0.4
+
+_at send-text --match "id:$WIN_SHELL" "clear\r"
+_wait 0.8
+_at send-text --match "id:$WIN_SHELL" "ls -lh demos/\r"
+_wait 1.2
+_at send-text --match "id:$WIN_SHELL" "git --no-pager log --oneline -5\r"
+_wait 1.2
+_at send-text --match "id:$WIN_SHELL" "ls assets/*.png | head -8\r"
+_wait 1.2
+_at focus-window --match "id:$WIN_NVIM"
+_wait 0.5
+"$H" snapshot "08-hero"
 
 # ---------------------------------------------------------------------------
 echo "Screenshots saved to $SHOT_DIR"

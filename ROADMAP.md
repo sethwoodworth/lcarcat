@@ -34,6 +34,19 @@ See `README.md` for nomenclature.
 - **Demos** — `demos/*.sh`: palette swatches, swoop shapes, cell-bar styles, prompt layout,
   timestamp styles.
 
+- **`:LcarsTerm` — neovim terminal frame** — `nvim/lua/lcars/`: a replacement for `:terminal`
+  that renders each shell command as an LCARS **block**. `pty_session.lua` runs the shell under
+  `jobstart(pty=true)` and parses OSC 133 A/B/C/D out of the raw byte stream into block
+  lifecycle events; `block_record`/`frame_buffer` hold the model; `frame_renderer` draws the
+  header bar, chips, stem and footer. Header chips come from the shell over **OSC 7447**
+  (`docs/osc-7447.md`) — the shell names what a chip *means*, nvim maps meaning to color. Exit
+  status is nvim's own, derived from OSC 133;D. Working prototype: blocks, chips and outcome
+  render live, with unit suites plus kitty screenshot harnesses. Not yet complete — full-screen
+  programs need alternate-screen passthrough, and block navigation/folding are queued.
+- **Prompt data/render split** — `zsh/lcars_prompt_data.zsh` is a headless layer that gathers
+  prompt state and emits the OSC feed while drawing nothing; `zsh/prompt_lcars.zsh` renders on
+  top. One source of truth for prompt *data*, and the feed became testable without a terminal.
+
 ## Pending / ideas
 
 - **Split resize reflows stale swoop images** — opening/closing a vsplit reflows the pane, but
