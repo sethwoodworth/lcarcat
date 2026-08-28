@@ -15,7 +15,7 @@
 --   on_command_done(exit_code)   OSC 133;D;N — command finished
 --   on_output_line(line)         non-OSC, non-echoed output line
 --   on_cwd(path)                 OSC 7 — shell changed directory
---   on_chips(chips)              OSC 7447 — semantic prompt chips
+--   on_chips(chips, version)     OSC 7447 — semantic prompt chips
 --   on_exit(exit_code)           job process exited
 -- }
 --
@@ -64,6 +64,11 @@ local function parse_chips(payload)
   return out
 end
 
+-- The OSC 7447 protocol version this parser speaks. See docs/osc-7447.md.
+-- It is diagnostic, not gating: a mismatch warns and still renders, because a
+-- skewed deploy should be visible, not fatal.
+local PROTOCOL_VERSION = 1
+
 local function parse_osc(body, carry)
   if body == "133;A" then
     carry.skip_lines = false
@@ -83,14 +88,40 @@ local function parse_osc(body, carry)
     if path then
       return { kind = "event", type = "cwd", path = percent_decode(path) }
     end
-    -- An empty chip set is emitted as a bare "7447;lcars;chips" (no trailing
-    -- ";"), and must still fire so a stale chip list gets cleared.
-    if body == "7447;lcars;chips" then
-      return { kind = "event", type = "chips", chips = {} }
+    -- Versioned envelope: 7447;lcars;<version>;<message>[;<field>]...
+    -- The version precedes the message type deliberately — after "chips" the
+    -- fields are kind/label pairs read two at a time, so a version there would
+    -- be read by a pre-version parser as a kind and the first real kind as its
+    -- label. In front, a pre-version parser's ^7447;lcars;chips match simply
+    -- fails and it ignores the message, which is the required behaviour for an
+    -- unrecognised message rather than a silent misparse.
+    local ver, msg = body:match("^7447;lcars;(%d+);(.*)$")
+    if ver then
+      local version = tonumber(ver)
+      -- An empty chip set is a bare "...;chips" (no trailing ";"), and must
+      -- still fire so a stale chip list gets cleared.
+      if msg == "chips" then
+        return { kind = "event", type = "chips", chips = {}, version = version }
+      end
+      local payload = msg:match("^chips;(.*)$")
+      if payload then
+        return { kind = "event", type = "chips", chips = parse_chips(payload), version = version }
+      end
+      -- Known version, unrecognised message type: ignore, per the spec.
+      return nil
     end
-    local payload = body:match("^7447;lcars;chips;(.*)$")
-    if payload then
-      return { kind = "event", type = "chips", chips = parse_chips(payload) }
+
+    -- Unversioned legacy form, from a shell half deployed before the version
+    -- existed. Parsed rather than dropped, and reported as version 0, so the
+    -- reader can say "your zsh prompt is stale" instead of showing nothing —
+    -- which would be indistinguishable from a shell that never emitted chips
+    -- at all. That ambiguity is the failure this whole version field exists for.
+    if body == "7447;lcars;chips" then
+      return { kind = "event", type = "chips", chips = {}, version = 0 }
+    end
+    local legacy = body:match("^7447;lcars;chips;(.*)$")
+    if legacy then
+      return { kind = "event", type = "chips", chips = parse_chips(legacy), version = 0 }
     end
   end
   return nil
@@ -228,7 +259,7 @@ local function dispatch(callbacks, item)
   elseif t == "command_exec"  and callbacks.on_command_exec  then callbacks.on_command_exec()
   elseif t == "command_done"  and callbacks.on_command_done  then callbacks.on_command_done(item.exit_code)
   elseif t == "cwd"           and callbacks.on_cwd           then callbacks.on_cwd(item.path)
-  elseif t == "chips"         and callbacks.on_chips         then callbacks.on_chips(item.chips)
+  elseif t == "chips"         and callbacks.on_chips         then callbacks.on_chips(item.chips, item.version)
   end
 end
 
@@ -257,10 +288,20 @@ end
 
 -- ── public API ────────────────────────────────────────────────────────────
 
+-- The OSC 7447 version this build speaks. terminal_win compares it against the
+-- version on the wire to detect a half-deployed pair.
+M.PROTOCOL_VERSION = PROTOCOL_VERSION
+
 function M.start(shell_cmd, opts, callbacks)
   local carry_ref = { { buf = "", osc = nil, skip_lines = false } }
   _job_id = vim.fn.jobstart(shell_cmd, {
     pty       = true,
+    -- The reverse direction of the handshake. The shell cannot ask "is anyone
+    -- listening?" over a pty without request/response machinery, but it does
+    -- not have to: we spawned it, so we can just tell it in the environment.
+    -- zsh/lcars_prompt_data.zsh reads this into _LCARS_OSC_PEER.
+    env       = { LCARS_TERM_PROTO = tostring(PROTOCOL_VERSION) },
+    clear_env = false,
     width     = (opts and opts.width)  or 220,
     height    = (opts and opts.height) or 50,
     on_stdout = make_on_stdout(callbacks, carry_ref),

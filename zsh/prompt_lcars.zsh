@@ -7,6 +7,16 @@
 #
 # Flat parts are terminal cells; only the curved ends (elbow/cap) are kitty images.
 # Depends on nothing from prompt.zsh. Toggle with:  lcarsprompt on | off | (toggle)
+#
+# This file is the RENDER layer. It draws; it does not decide what the prompt
+# knows. Segment values (git, venv, python, aws, cwd), the OSC 133 command
+# boundaries and the OSC 7447 chip feed all live in zsh/lcars_prompt_data.zsh,
+# which this file sources and installs itself into. One source of truth for
+# prompt *data*, with kitty graphics as a consumer sitting on top of it.
+#
+# The consequence worth knowing: the data layer works with this file absent
+# (that is what :LcarsTerm uses), but this file cannot work without the data
+# layer. It reads the _LCARS_S_* state the data layer gathered.
 
 zmodload zsh/datetime 2>/dev/null
 autoload -Uz add-zsh-hook
@@ -41,6 +51,11 @@ _lcars_set_asset_paths() {
 }
 _lcars_set_asset_paths
 
+# ---- shared headless data layer -------------------------------------------
+# Sourced from alongside this file so a deployed copy and a repo copy each pick
+# up their own sibling rather than crossing over.
+source "${0:A:h}/lcars_prompt_data.zsh"
+
 # ---- split-swoop feature toggle (DISABLED) ---------------------------------
 # When enabled, the prompt queries its kitty pane's neighbors (via `kitty @ ls`, cached +
 # refreshed on SIGWINCH) and swaps the round cap on any pane-abutting edge for a mirrored
@@ -65,13 +80,8 @@ _LC_W='255;255;198'     # nested text
 _LC_DIM='120;120;140'   # timestamps
 # LED colors: start = _LC_PERI (sky, neutral), end = _LC_OK (ok) / _LC_RED (fail)
 
-# ---- git chip labels: LCARS "NN-WORD" dashed codes (count on the left) ------
-# One gold chip per state, shown only when its count > 0. Words, not symbols, so
-# the meaning is legible; rename freely.
-_LC_GIT_STAGED='STAGED'     # files staged in the index
-_LC_GIT_MODIFIED='MODIFIED' # tracked files with unstaged edits
-_LC_GIT_UNTRACKED='UNTRACKED' # untracked files
-
+# git chip labels (_LC_GIT_STAGED/MODIFIED/UNTRACKED) live in the data layer:
+# they travel on the wire, so both consumers have to agree on them.
 # ---- toolkit: raw SGR + spacing + image placement --------------------------
 _lc_bg()    { print -n -- "\e[48;2;${1}m"; }
 _lc_fg()    { print -n -- "\e[38;2;${1}m"; }
@@ -286,19 +296,9 @@ for osw in d:
 TRAPWINCH() { _LCARS_PANE_DIRTY=1; _LCARS_CELL_DIRTY=1 }   # coalesce; precmd recomputes lazily when dirty
 
 # ---- segment values (plain text) -------------------------------------------
-_lcars_git_branch() {
-  git rev-parse --is-inside-work-tree &>/dev/null || return
-  git symbolic-ref --short HEAD 2>/dev/null || git describe --tags --exact-match 2>/dev/null || echo detached
-}
-
-# Echo three counts: "<staged> <modified> <untracked>" for the current repo.
-_lcars_git_counts() {
-  local st; st=$(git status --porcelain 2>/dev/null)
-  printf '%d %d %d' \
-    "$(print -r -- "$st" | grep -cE '^[MARCD]')" \
-    "$(print -r -- "$st" | grep -cE '^.M')" \
-    "$(print -r -- "$st" | grep -c  '^??')"
-}
+# _lcars_git_branch / _lcars_git_counts / _lcars_py_seg / _lcars_venv_seg are in
+# the data layer — they produce values, not pixels. What is left here is the one
+# genuinely render-only formatter.
 
 # Compact branch + indicators, for the plain non-graphics fallback prompt only.
 # Args: <branch> <staged> <modified> <untracked>. The caller has already
@@ -310,42 +310,6 @@ _lcars_git_seg() {
   local ind=""
   (( $2 )) && ind+='+'; (( $3 )) && ind+='!'; (( $4 )) && ind+='?'
   print -rn -- "${branch}${ind:+ $ind}"
-}
-
-_lcars_py_seg() {
-  local tv=""
-  if git rev-parse --show-toplevel &>/dev/null; then tv="$(git rev-parse --show-toplevel)/.tool-versions"
-  elif [[ -f .tool-versions ]]; then tv=.tool-versions; fi
-  [[ -f $tv ]] || return
-  local v; v=$(awk '/^python / {print $2}' "$tv")
-  [[ -n $v ]] && print -rn -- "py $v"
-}
-
-_lcars_aws_seg() {
-  [[ -z $AWS_PROFILE ]] && return
-  print -rn -- " AWS|${AWS_PROFILE} "
-}
-
-# ---- OSC 7447: semantic chip payload (spec: docs/osc-7447.md) --------------
-# The kitty swoop bar draws its chips itself, as pixels. Inside :LcarsTerm there
-# are no graphics, so nvim's frame_renderer draws the block-header chips and
-# needs the *values* rather than the rendering. Body:
-#
-#   ESC ] 7447 ; lcars ; chips [ ; <kind> ; <label> ]... ST
-#
-# The shell names what a chip means (err/venv/py/aws/awsdep/git/gitstate);
-# nvim/lua/lcars/block_chips.lua maps kind -> highlight group, so colors stay a
-# neovim concern. `;` separates fields, so `;` and `%` are percent-encoded in
-# labels (branch names may legally contain either). Terminals that don't know
-# OSC 7447 ignore it, which makes this safe to emit unconditionally.
-_lcars_emit_chips() {
-  local out="" lbl
-  local -i i
-  for (( i=1; i<=$#; i+=2 )); do
-    lbl=${argv[i+1]//\%/%25}
-    out+=";${argv[i]};${lbl//;/%3B}"
-  done
-  printf '\e]7447;lcars;chips%s\e\\' "$out"
 }
 
 # ---- render one bar row of Style-B chips (text row) or blanks (other row) ---
@@ -364,35 +328,28 @@ _lcars_chips() {
 }
 
 # ---- preexec ---------------------------------------------------------------
+# Render-only. _LCARS_CMD_RAN and the closing OSC 133;C belong to the data
+# layer's _lcars_data_preexec, which lcars_prompt_data_install registers to run
+# immediately after this — C has to be last so it ends the suppression window
+# that keeps the STARDATE line below out of the command's captured output.
 _lcars_swoop_preexec() {
   _LCARS_START=$EPOCHREALTIME
-  _LCARS_CMD_RAN=1
   if _lcars_graphics_ok; then
     # start line: [sky LED] STARDATE <astronomical Julian Day Number>  <UTC datetime>
     local -i jdn=$(( EPOCHSECONDS / 86400 + 2440588 ))
     local dt; TZ=UTC strftime -s dt '0%Y-%m-%dT%H:%M:%Sz' $EPOCHSECONDS
     printf '\e[48;2;%sm \e[0m \e[38;2;%smSTARDATE %d  %s\e[0m\n' "$_LC_PERI" "$_LC_DIM" "$jdn" "$dt"
   fi
-  # OSC 133;C (command_exec) for lcars.pty_session — see the precmd comment
-  # below for why this has to be *last*: it ends the skip_lines suppression
-  # window opened by precmd's trailing OSC 133;B, which is what keeps the
-  # STARDATE line above (and the prompt's own rendered bytes) out of the
-  # command's captured output.
-  printf '\e]133;C\e\\'
 }
 
 # ---- precmd ----------------------------------------------------------------
 _lcars_swoop_precmd() {
-  local last_exit=$?
-
-  # OSC 133;D (command_done) for lcars.pty_session — emitted *before* any of
-  # this function's own decorative output (LED line, swoop bar) so that
-  # output streams out while no block is open (the previous one just closed
-  # at D, the next one doesn't open until A below); pty_session drops
-  # output_line callbacks with no live block, so this prompt's own chrome
-  # never lands in a rendered command's captured output. See
-  # docs/nvim-terminal-frame.md.
-  [[ -n $_LCARS_CMD_RAN ]] && printf '\e]133;D;%d\e\\' "$last_exit"
+  # The data layer already ran (_lcars_data_precmd_open): it emitted OSC 133;D,
+  # gathered this prompt's state into the _LCARS_S_* globals, and snapshotted
+  # the "a command actually ran" flag into _LCARS_S_CMD_RAN. Everything below is
+  # rendering. The closing half (133;A, chips, OSC 7, 133;B) runs after this
+  # function returns — see lcars_prompt_data_install for why the order matters.
+  local last_exit=$_LCARS_S_EXIT
 
   # Re-probe cell size after a WINCH (font zoom / display change / SIGWINCH). If it
   # changed, _lcars_probe_cell_size clears _LCARS_IMAGES_SENT so _lcars_transmit_images
@@ -403,65 +360,32 @@ _lcars_swoop_precmd() {
     _LCARS_CELL_DIRTY=
   fi
 
-  # ---- segment values, shared by both render paths -------------------------
-  # Gathered before the graphics check because both the kitty swoop bar and the
-  # OSC 7447 chip payload are built from them, and neither path should pay for a
-  # second round of git subprocesses.
+  # ---- segment values, from the shared data layer --------------------------
+  # Read, not recomputed: the data layer gathered these once so the swoop bar and
+  # the OSC 7447 payload are built from one set of values and neither path pays
+  # for a second round of git subprocesses.
   # (note: `status` is a read-only special in zsh -> use `estat`)
-  local venv="" py gbranch estat cwd aws
-  local -a gc chip_kv
-  [[ -n $VIRTUAL_ENV ]] && venv="${VIRTUAL_ENV:t}"
-  [[ -z $venv && -f pyproject.toml && -d .venv ]] && venv="uv"
-  py=$(_lcars_py_seg); gbranch=$(_lcars_git_branch)
+  local venv=$_LCARS_S_VENV py=$_LCARS_S_PY gbranch=$_LCARS_S_BRANCH cwd=$_LCARS_S_CWD
+  local estat="" aws=""
+  local -a gc; gc=("${_LCARS_S_GC[@]}")
   (( last_exit != 0 )) && estat="$last_exit"
-  cwd="${(%):-%~}"
-  aws=$(_lcars_aws_seg)
-  if [[ -n $gbranch ]]; then gc=(${(s: :)$(_lcars_git_counts)}); else gc=(0 0 0); fi
-
-  # Flat kind/label pairs for _lcars_emit_chips, in the same left-to-right order
-  # the swoop bar uses. Labels carry no padding: frame_renderer's chips_block
-  # adds its own. `printf -v` keeps the git-state labels fork-free.
-  # No `err` chip: precmd runs *after* the command, so $estat is the exit code
-  # of the command that just finished — but these chips get attached to the
-  # block that is about to open, i.e. the next one. nvim reports exit status on
-  # the correct block itself, as a footer chip (block_chips.outcome). The swoop
-  # bar keeps its own error chip below, where "the command that just ran" is
-  # exactly the right meaning.
-  local _cs
-  [[ -n $venv  ]] && chip_kv+=(venv "$venv")
-  [[ -n $py    ]] && chip_kv+=(py "$py")
-  if [[ -n $AWS_PROFILE ]]; then
-    if [[ $AWS_PROFILE == dep ]]; then
-      chip_kv+=(awsdep "AWS|${AWS_PROFILE}")
-    else
-      chip_kv+=(aws "AWS|${AWS_PROFILE}")
-    fi
-  fi
-  if [[ -n $gbranch ]]; then
-    chip_kv+=(git "$gbranch")
-    (( gc[1] )) && { printf -v _cs '%02d-%s' $gc[1] $_LC_GIT_STAGED;    chip_kv+=(gitstate "$_cs") }
-    (( gc[2] )) && { printf -v _cs '%02d-%s' $gc[2] $_LC_GIT_MODIFIED;  chip_kv+=(gitstate "$_cs") }
-    (( gc[3] )) && { printf -v _cs '%02d-%s' $gc[3] $_LC_GIT_UNTRACKED; chip_kv+=(gitstate "$_cs") }
-  fi
+  # The bar pads its own aws label; the wire form carries no padding.
+  [[ -n $_LCARS_S_AWS ]] && aws=" AWS|${_LCARS_S_AWS} "
 
   if ! _lcars_graphics_ok; then
     local gi; gi=$(_lcars_git_seg "$gbranch" $gc[1] $gc[2] $gc[3])
     local aw=""
-    if [[ -n $AWS_PROFILE ]]; then
-      local aw_color="#ff9933"; [[ $AWS_PROFILE == dep ]] && aw_color="#ff3300"
-      aw="%F{${aw_color}}AWS|${AWS_PROFILE}%f "
+    if [[ -n $_LCARS_S_AWS ]]; then
+      local aw_color="#ff9933"; [[ $_LCARS_S_AWS == dep ]] && aw_color="#ff3300"
+      aw="%F{${aw_color}}AWS|${_LCARS_S_AWS}%f "
     fi
     PROMPT="%F{#5599ff}%~%f ${gi:+%F{#ffcc66}$gi%f }${aw}"$'\n'"%K{#9999ff} %k "
     PROMPT2="%K{#9999ff} %k "
-    # OSC 133;A (prompt_start) + OSC 7 (cwd) + OSC 133;B (command_start).
-    # B goes last and un-gated by _lcars_graphics_ok: it opens the same
-    # skip_lines suppression window pty_session already uses for echoed
-    # input, which also swallows this PROMPT's own rendered bytes until
-    # preexec's closing OSC 133;C (see _lcars_swoop_preexec).
-    printf '\e]133;A\e\\'
-    _lcars_emit_chips "${chip_kv[@]}"
-    printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD"
-    printf '\e]133;B\e\\'
+    # No OSC here: _lcars_data_precmd_close emits 133;A, the chips, OSC 7 and
+    # 133;B after this function returns, on this path exactly as on the
+    # graphics one. That is the point of the split — the data feed is not
+    # gated on _lcars_graphics_ok and cannot be broken by a change to either
+    # render path.
     return
   fi
 
@@ -495,13 +419,12 @@ _lcars_swoop_precmd() {
 
   # 1) Close the previous command with an end-timestamp line (no bottom bar).
   #    [LED: green ok / red fail] <UTC datetime>  <duration if over threshold>
-  if [[ -n $_LCARS_CMD_RAN ]]; then
+  if [[ -n $_LCARS_S_CMD_RAN ]]; then
     local -i dur=0; (( dur = (EPOCHREALTIME - ${_LCARS_START:-$EPOCHREALTIME}) * 1000 ))
     local d=""; (( dur > ${CMD_DURATION_THRESHOLD:-2000} )) && d="  ${dur}ms"
     local led=$_LC_OK; (( last_exit != 0 )) && led=$_LC_RED
     local dt; TZ=UTC strftime -s dt '0%Y-%m-%dT%H:%M:%Sz' $EPOCHSECONDS
     printf '\e[48;2;%sm \e[0m \e[38;2;%sm%s%s\e[0m\n' "$led" "$_LC_DIM" "$dt" "$d"
-    _LCARS_CMD_RAN=
   fi
 
   # 2) Build chip groups (label text incl. padding, color).
@@ -514,7 +437,7 @@ _lcars_swoop_precmd() {
   [[ -n $py     ]] && chips_py=(" $py "     "$_LC_PERI")
   if [[ -n $aws ]]; then
     local aws_color=$_LC_AWS
-    [[ $AWS_PROFILE == dep ]] && aws_color=$_LC_RED
+    [[ $_LCARS_S_AWS == dep ]] && aws_color=$_LC_RED
     chips_aws+=("$aws" "$aws_color")
   fi
   if [[ -n $gbranch ]]; then
@@ -619,15 +542,11 @@ _lcars_swoop_precmd() {
     PROMPT="  "; PROMPT2="  "
   fi
 
-  # OSC 133;A (prompt_start) + OSC 7 (cwd) + OSC 133;B (command_start) — see
-  # the comment on the D emission above. Emitted last (after the swoop bar
-  # has already streamed out with no block open) so the bar isn't captured
-  # as a command's output; B then suppresses the elbow-stem PROMPT bytes
-  # above the same way it suppresses echoed input, until preexec's OSC 133;C.
-  printf '\e]133;A\e\\'
-  _lcars_emit_chips "${chip_kv[@]}"
-  printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD"
-  printf '\e]133;B\e\\'
+  # 133;A, the chip payload, OSC 7 and 133;B follow, emitted by
+  # _lcars_data_precmd_close once this function returns — after the swoop bar
+  # has streamed out with no block open, so the bar is never captured as a
+  # command's output, and with B last so it suppresses the elbow-stem PROMPT
+  # bytes the same way it suppresses echoed input until preexec's 133;C.
 }
 
 # ---- toggle ----------------------------------------------------------------
@@ -636,8 +555,11 @@ _lcars_prompt_enable() {
   add-zsh-hook -d preexec print_command_timestamp
   add-zsh-hook -d preexec track_command_start
   unfunction precmd 2>/dev/null
-  add-zsh-hook precmd  _lcars_swoop_precmd
-  add-zsh-hook preexec _lcars_swoop_preexec
+  # The data layer installs its own hooks with the render hooks interleaved at
+  # the one point they belong: precmd becomes [data_open, render, data_close]
+  # and preexec [render, data_C]. Stating the order there, as an argument list,
+  # is why neither file has to reason about precmd_functions array indices.
+  lcars_prompt_data_install _lcars_swoop_precmd _lcars_swoop_preexec
   _LCARS_PROMPT_ON=1
   # Probe kitty's actual cell.width/height first so we transmit correctly-sized PNGs.
   # Any mismatch produces a 1-2 device-px aspect-fit inset in the elbow stem.
@@ -658,8 +580,9 @@ _lcars_prompt_enable() {
   return 0
 }
 _lcars_prompt_disable() {
-  add-zsh-hook -d precmd  _lcars_swoop_precmd
-  add-zsh-hook -d preexec _lcars_swoop_preexec
+  # Drops the data hooks too. Turning the LCARS prompt off means turning off the
+  # feed it drives — a plain prompt has no block boundaries to report.
+  lcars_prompt_data_uninstall
   _LCARS_PROMPT_ON=
   source ~/.config/zsh/prompt.zsh
   if zle; then zle reset-prompt; fi

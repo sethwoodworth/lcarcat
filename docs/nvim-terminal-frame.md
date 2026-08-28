@@ -145,7 +145,7 @@ false and the prompt takes its plain-text fallback path. The chip payload is
 emitted on *both* paths, right after `OSC 133;A`:
 
 ```
-ESC]7447;lcars;chips;venv;lcarcat;git;main;gitstate;02-STAGED ESC\
+ESC]7447;lcars;1;chips;venv;lcarcat;git;main;gitstate;02-STAGED ESC\
 ```
 
 **The wire format is specified in [`docs/osc-7447.md`](osc-7447.md)** — escaping,

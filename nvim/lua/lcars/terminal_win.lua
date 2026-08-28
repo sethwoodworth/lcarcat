@@ -83,6 +83,33 @@ local function scroll_display_to_end(fb)
   vim.api.nvim_win_set_cursor(state.display_win, { last, 0 })
 end
 
+-- deploy.sh copies the zsh half to ~/.config/zsh and the nvim half to
+-- ~/.config/nvim, and nothing makes you update both. A stale pair used to be
+-- invisible: an old nvim just shows no chips, which looks exactly like a shell
+-- that never emitted any. The version on the wire makes the two cases
+-- distinguishable, so say so — once per session, and then render anyway,
+-- because a skewed deploy should be visible rather than fatal.
+local _warned_skew = false
+local function warn_once_on_protocol_skew(version)
+  if _warned_skew or version == nil then return end
+  local mine = pty_session.PROTOCOL_VERSION
+  if version == mine then return end
+  _warned_skew = true
+  local detail
+  if version == 0 then
+    detail = ("the shell prompt predates OSC 7447 versioning (this nvim speaks v%d)"):format(mine)
+  elseif version < mine then
+    detail = ("the shell prompt speaks OSC 7447 v%d, this nvim speaks v%d"):format(version, mine)
+  else
+    detail = ("the shell prompt speaks OSC 7447 v%d, newer than this nvim's v%d"):format(version, mine)
+  end
+  vim.notify(
+    "lcars: " .. detail .. ". The zsh and nvim halves are out of sync — re-run deploy.sh. "
+      .. "Chips will still render, best-effort.",
+    vim.log.levels.WARN
+  )
+end
+
 local function make_callbacks(fb)
   return {
     -- OSC 133;A. The record is created here — on_cwd and on_chips both arrive
@@ -146,7 +173,8 @@ local function make_callbacks(fb)
     end,
 
     -- OSC 7447 — branch/venv/py/aws chips computed by the shell's precmd.
-    on_chips = function(chips)
+    on_chips = function(chips, version)
+      warn_once_on_protocol_skew(version)
       if state.rec then state.rec.chips = block_chips.from_osc(chips) end
     end,
   }

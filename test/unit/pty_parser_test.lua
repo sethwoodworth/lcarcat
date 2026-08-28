@@ -227,10 +227,19 @@ end
 
 -- ── test 18: OSC 7447 chip payload ───────────────────────────────────────
 
-local function ev_chips(c) return { kind = "event", type = "chips", chips = c } end
+-- The wire form is versioned: ESC ] 7447 ; lcars ; <ver> ; chips [...] ST.
+-- V is the version this parser speaks; tests below use it unless they are
+-- deliberately exercising a mismatch.
+local V = 1
+local function chips_osc(payload, ver)
+  return ESC .. "]7447;lcars;" .. (ver or V) .. ";chips" .. (payload or "") .. ST
+end
+local function ev_chips(c, ver)
+  return { kind = "event", type = "chips", chips = c, version = ver or V }
+end
 
 do
-  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;git;main;venv;lcarcat" .. ST)
+  local _, items = parse(fresh(), chips_osc(";git;main;venv;lcarcat"))
   deep_eq("18a chips", items, { ev_chips({
     { kind = "git",  label = "main" },
     { kind = "venv", label = "lcarcat" },
@@ -240,14 +249,14 @@ end
 -- ── test 19: empty chip set still fires (clears a stale list) ─────────────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips" .. ST)
+  local _, items = parse(fresh(), chips_osc())
   deep_eq("19a chips", items, { ev_chips({}) })
 end
 
 -- ── test 20: percent-decoding of ";" and "%" inside a chip label ──────────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;git;feat%3Ba;venv;v%25x" .. ST)
+  local _, items = parse(fresh(), chips_osc(";git;feat%3Ba;venv;v%25x"))
   deep_eq("20a chips", items, { ev_chips({
     { kind = "git",  label = "feat;a" },
     { kind = "venv", label = "v%x" },
@@ -257,14 +266,14 @@ end
 -- ── test 21: truncated trailing field is dropped, not half-emitted ────────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;git;main;venv" .. ST)
+  local _, items = parse(fresh(), chips_osc(";git;main;venv"))
   deep_eq("21a chips", items, { ev_chips({ { kind = "git", label = "main" } }) })
 end
 
 -- ── test 22: chip payload split across a chunk boundary ──────────────────
 
 do
-  local c1, i1 = parse(fresh(), ESC .. "]7447;lcars;chi")
+  local c1, i1 = parse(fresh(), ESC .. "]7447;lcars;" .. V .. ";chi")
   deep_eq("22a items", i1, {})
   local _, i2 = parse(c1, "ps;git;main" .. ST)
   deep_eq("22b items", i2, { ev_chips({ { kind = "git", label = "main" } }) })
@@ -273,11 +282,53 @@ end
 -- ── test 23: an empty label survives as an empty string, kind intact ─────
 
 do
-  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;err;;git;main" .. ST)
+  local _, items = parse(fresh(), chips_osc(";err;;git;main"))
   deep_eq("23a chips", items, { ev_chips({
     { kind = "err", label = "" },
     { kind = "git", label = "main" },
   }) })
+end
+
+-- ── test 24: the version reaches the consumer ────────────────────────────
+-- It is diagnostic, not gating: parsing must succeed for a version we do not
+-- speak, so a skewed deploy still renders while the reader warns about it.
+
+do
+  local _, items = parse(fresh(), chips_osc(";git;main", 99))
+  deep_eq("24a a future version still parses", items,
+    { ev_chips({ { kind = "git", label = "main" } }, 99) })
+end
+
+-- ── test 25: the unversioned legacy form reports version 0 ───────────────
+-- A shell half deployed before versioning existed. Parsed rather than dropped,
+-- so the reader can say "your zsh prompt is stale" instead of showing nothing —
+-- which would look exactly like a shell that never emitted chips at all. That
+-- ambiguity is the failure the version field exists to remove.
+
+do
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips;git;main" .. ST)
+  deep_eq("25a legacy payload parses as version 0", items,
+    { ev_chips({ { kind = "git", label = "main" } }, 0) })
+end
+
+do
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;chips" .. ST)
+  deep_eq("25b legacy empty set parses as version 0", items, { ev_chips({}, 0) })
+end
+
+-- ── test 26: unknown message type on a known version is ignored ──────────
+-- Message-type-as-version survives alongside the envelope version: a future
+-- message this build does not know must vanish, not misparse.
+
+do
+  local _, items = parse(fresh(), ESC .. "]7447;lcars;" .. V .. ";sparklines;1;2;3" .. ST)
+  deep_eq("26a unknown message ignored", items, {})
+end
+
+-- A foreign namespace is ignored regardless of version.
+do
+  local _, items = parse(fresh(), ESC .. "]7447;notlcars;" .. V .. ";chips;git;main" .. ST)
+  deep_eq("26b foreign namespace ignored", items, {})
 end
 
 -- ── summary ───────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ DRY=0
 # src (repo-relative)            dest (absolute)
 # One pair per line; globs in src are expanded.
 mappings=(
+  "zsh/lcars_prompt_data.zsh     $CONFIG/zsh/lcars_prompt_data.zsh"
   "zsh/prompt_lcars.zsh          $CONFIG/zsh/prompt_lcars.zsh"
   "generate/gen_swoops.py        $CONFIG/kitty/lcars/gen_swoops.py"
   "kitty/lcars.conf              $CONFIG/kitty/lcars.conf"
