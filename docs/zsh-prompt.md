@@ -1,8 +1,86 @@
 # Zsh Prompt Architecture
 
-`zsh/prompt_lcars.zsh` — the LCARS swoop prompt. Toggle with `lcarsprompt on|off`.
+Two files, split by job:
+
+| File | Job |
+|------|-----|
+| `zsh/lcars_prompt_data.zsh` | **Data.** Gathers prompt state and emits it as escape sequences. Draws nothing, sets no `PROMPT`. |
+| `zsh/prompt_lcars.zsh` | **Render.** The LCARS swoop prompt. Sources the data layer and draws on top of it. Toggle with `lcarsprompt on\|off`. |
 
 Falls back to a plain two-line zsh prompt outside kitty (tmux, SSH).
+
+The dependency runs one way. The data layer works with the renderer absent —
+that is what `:LcarsTerm` uses — but the renderer cannot work without the data
+layer, because it reads the `_LCARS_S_*` state the data layer gathered.
+
+---
+
+## Why they are separate
+
+The renderer used to do both jobs, and the combination had a nasty property:
+**the data job had no visual feedback in the environment where the rendering job
+ran.** If the OSC 7447 payload broke while you were in kitty, the swoop bar still
+looked perfect and nothing told you. You found out next time you opened
+`:LcarsTerm`.
+
+Splitting them makes the data layer independently testable — feed it a state,
+assert on the emitted bytes, with no terminal, kitty, or screenshots involved.
+See `test/unit/prompt_data_test.zsh`.
+
+---
+
+## What the data layer owns
+
+- **Segment gathering** — `_lcars_git_branch`, `_lcars_git_counts`,
+  `_lcars_py_seg`, `_lcars_venv_seg`, into the `_LCARS_S_*` globals, once per
+  prompt. Both the swoop bar and the wire payload read those, so neither pays
+  for a second round of git subprocesses.
+- **OSC 133** command boundaries (`A`/`B`/`C`/`D`) for `lcars.pty_session`.
+- **OSC 7** cwd reporting.
+- **OSC 7447** the versioned chip feed — see [`osc-7447.md`](osc-7447.md).
+- **Hook installation**, including the renderer's (below).
+
+It is permanent, not a bridge. nvim could derive `py` and `git`/`gitstate` from
+the cwd it already has, but `venv` (`$VIRTUAL_ENV`) and `aws` (`$AWS_PROFILE`)
+are the live environment of a process nvim spawned and cannot inspect — no
+`/proc` on macOS, and `ps eww` prints argv without environ. Activate a venv in a
+`:LcarsTerm` shell and nvim can only learn of it by being told.
+
+---
+
+## Hook ordering
+
+Load-bearing, and the reason the data layer installs the renderer's hooks rather
+than the renderer installing its own. Within one prompt:
+
+```
+133;D  →  [renderer draws]  →  133;A, chips, OSC 7, 133;B
+```
+
+`D` goes first, before any decorative output, so whatever the renderer prints
+streams out while no block is open — the previous block closed at `D` and the
+next does not open until `A`. `pty_session` drops `output_line` callbacks with no
+live block, so the prompt's own chrome never lands in a rendered command's
+captured output.
+
+`B` goes last for the mirror reason: it opens the `skip_lines` suppression window
+that also swallows the renderer's `PROMPT` bytes until preexec's closing `133;C`.
+
+`lcars_prompt_data_install` takes the render hooks as arguments and produces:
+
+```
+precmd_functions  = (_lcars_data_precmd_open  _lcars_swoop_precmd  _lcars_data_precmd_close)
+preexec_functions = (_lcars_swoop_preexec     _lcars_data_preexec)
+```
+
+Called with no arguments it installs headless — correct feed, untouched
+`PROMPT`. Stating the order there, as an argument list, is why neither file has
+to reason about `precmd_functions` array indices.
+
+**If you add another zsh hook to this prompt** (atuin, direnv, anything that
+wants precmd/preexec), it has to be placed relative to those boundaries, not
+appended blindly. A hook that prints goes in the renderer slot; a hook that only
+computes can go anywhere.
 
 ---
 
@@ -12,7 +90,7 @@ Falls back to a plain two-line zsh prompt outside kitty (tmux, SSH).
 [elbow image] → [Style-B chips] → [orange fill] → [Style-A notch] → [2 bar-color cols] → [cap image]
 ```
 
-Drawn by `_lcars_swoop_precmd` each prompt via `add-zsh-hook precmd`. Two chrome lines (bar row 0 and row 1) are emitted as print statements with trailing newlines. The input line is set in `$PROMPT` as a third image row (the elbow's stem stub + inner fillet).
+Drawn by `_lcars_swoop_precmd`, the middle of the three precmd hooks (see Hook ordering above). Two chrome lines (bar row 0 and row 1) are emitted as print statements with trailing newlines. The input line is set in `$PROMPT` as a third image row (the elbow's stem stub + inner fillet).
 
 ---
 
@@ -141,7 +219,7 @@ PROMPT2="%K{#9999ff} %k "
 
 Julian Day Number: `jdn = EPOCHSECONDS / 86400 + 2440588`
 
-`_lcars_swoop_precmd` emits the **end line** after each command (if `_LCARS_CMD_RAN` is set):
+`_lcars_swoop_precmd` emits the **end line** after each command (if `_LCARS_S_CMD_RAN` is set — the data layer's snapshot of `_LCARS_CMD_RAN`, which it clears itself so a headless shell does not re-emit `133;D` with a stale exit code):
 ```
 [green/red LED cell] <UTC datetime>  [duration if > CMD_DURATION_THRESHOLD]
 ```

@@ -142,7 +142,7 @@ Per-slot picks when a glyph is warranted:
 - **Colors/tabs:** `include ~/.config/kitty/lcars.conf` in `kitty.conf` (after your base
   colorscheme); comment it out to revert.
 - **Keybindings:** append `kitty/keybindings.snippet.conf`.
-- **Prompt:** copy `zsh/prompt_lcars.zsh` to `~/.config/zsh/`, `source` it after your default
+- **Prompt:** copy `zsh/prompt_lcars.zsh` *and* `zsh/lcars_prompt_data.zsh` to `~/.config/zsh/`, `source` the former after your default
   prompt, then `lcarsprompt on` (or `export LCARS=1` for new shells). The prompt expects the
   PNGs at `~/.config/kitty/lcars/` — adjust `_LCARS_DIR` if you install elsewhere.
 - **Assets:** `uv run --with pillow generate/gen_swoops.py [--color HEX] [--cols N]

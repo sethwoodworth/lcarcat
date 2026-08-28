@@ -17,6 +17,7 @@ Destinations are hardcoded for `$XDG_CONFIG_HOME` (defaults `~/.config`). See `R
 
 | Repo path | Deployed to |
 |-----------|-------------|
+| `zsh/lcars_prompt_data.zsh` | `~/.config/zsh/lcars_prompt_data.zsh` |
 | `zsh/prompt_lcars.zsh` | `~/.config/zsh/prompt_lcars.zsh` |
 | `generate/gen_swoops.py` | `~/.config/kitty/lcars/gen_swoops.py` |
 | `kitty/lcars.conf` | `~/.config/kitty/lcars.conf` |
@@ -48,7 +49,15 @@ Destinations are hardcoded for `$XDG_CONFIG_HOME` (defaults `~/.config`). See `R
 `deploy.sh` prints these at the end:
 
 1. **kitty.conf** — ensure it includes `lcarcat.keybindings.conf` (already done if you ran initial setup).
-2. **Reload prompt** — `source ~/.config/zsh/prompt_lcars.zsh`
+2. **Reload prompt** — `source ~/.config/zsh/prompt_lcars.zsh` (it sources
+   `lcars_prompt_data.zsh` from alongside itself, so both halves reload together).
+
+**Deploy both zsh halves together.** They are separate files but one unit: the
+renderer reads state the data layer gathers, and the data layer speaks a
+versioned protocol to nvim. A mismatched pair is now *detected* rather than
+silent — nvim warns once when the OSC 7447 version on the wire is not the one it
+speaks (see [`osc-7447.md`](osc-7447.md), "Compatibility") — but detected is not
+the same as working. Copy both.
 
 ## Asset naming and the 19x38 default
 

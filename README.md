@@ -104,6 +104,7 @@ AGENTS.md                      working rules for agents (min-viable-image, deplo
 deploy.sh                      copy repo -> ~/.config and verify (--dry-run to preview)
 generate/gen_swoops.py         Pillow generator for the elbow + round caps (run via uv)
 assets/*.png                   generated caps (elbow-top/bottom, cap-right, legacy swoops)
+zsh/lcars_prompt_data.zsh      headless prompt state + OSC feed (no rendering)
 zsh/prompt_lcars.zsh           the switchable LCARS prompt (`lcarsprompt on|off`)
 kitty/lcars.conf               LCARS 16-color palette + tab-bar/border chrome
 kitty/keybindings.snippet.conf scrollback prompt-navigation binds
@@ -113,6 +114,10 @@ demos/*.sh                     standalone previews (palette, swoop, cells, promp
 Run any demo directly, e.g. `bash demos/prompt_preview.sh` (they read from `assets/`).
 
 ## The prompt (`zsh/prompt_lcars.zsh`)
+
+Two files: `zsh/lcars_prompt_data.zsh` decides what the prompt *knows* and reports it over
+escape sequences without drawing anything; `zsh/prompt_lcars.zsh` draws the bar on top of it.
+Deploy both. Architecture in [`docs/zsh-prompt.md`](docs/zsh-prompt.md).
 
 A top swoop bar drawn each prompt. Left to right: **elbow** → **Style-B chips** → orange
 **fill** → **Style-A path notch** → 2 bar-color cols → **cap**. Chips ride combed 1-col black

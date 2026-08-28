@@ -9,7 +9,8 @@ LCARS-themed terminal chrome for kitty + zsh + neovim. Curved elbows and caps ar
 ```
 lcarcat/
 ├── zsh/
-│   └── prompt_lcars.zsh        — LCARS swoop prompt; toggle with lcarsprompt on|off
+│   ├── lcars_prompt_data.zsh   — headless: prompt state + OSC 133/7/7447 feed, no rendering
+│   └── prompt_lcars.zsh        — LCARS swoop prompt (renders on top of the above)
 ├── kitty/
 │   ├── lcars.conf              — kitty color theme + font config
 │   └── lcarcat.keybindings.conf — keybindings
@@ -42,7 +43,7 @@ lcarcat/
 
 | Subsystem | Key files | Shared asset store |
 |-----------|-----------|-------------------|
-| **zsh** | `zsh/prompt_lcars.zsh` | `assets/` (19×38 px) |
+| **zsh** | `zsh/lcars_prompt_data.zsh` (data), `zsh/prompt_lcars.zsh` (render) | `assets/` (19×38 px) |
 | **kitty** | `kitty/lcars.conf`, `kitty/lcarcat.keybindings.conf` | (theme only, no PNGs) |
 | **nvim** | `nvim/lua/lcars/chrome.lua` + siblings | `stdpath('cache')/lcars/` (generated at runtime) |
 
@@ -94,6 +95,7 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Understand PNG generation or asset caching | [`docs/asset-pipeline.md`](asset-pipeline.md) |
 | Work on the nvim terminal frame (blocks, PTY, frame_renderer/frame_buffer/term_input) | [`docs/nvim-terminal-frame.md`](nvim-terminal-frame.md) |
 | Change what the shell tells nvim (chips, prompt metadata over the wire) | [`docs/osc-7447.md`](osc-7447.md) — the protocol spec, written to stand alone |
+| Change what the prompt *knows*, or add a zsh precmd/preexec hook | [`docs/zsh-prompt.md`](zsh-prompt.md) — hook ordering is load-bearing; do not append blindly |
 | Look up nvim API behaviour or plugin capability for the terminal frame | [`docs/nvim-terminal-research.md`](nvim-terminal-research.md) |
 | Write ANSI output into a `modifiable=false` display buffer (baleia) | [`docs/spike-2-baleia-findings.md`](spike-2-baleia-findings.md) |
 | Understand why a design decision was made under an epic | [`docs/architecture-decisions.md`](architecture-decisions.md) |

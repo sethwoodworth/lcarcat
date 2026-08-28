@@ -75,6 +75,50 @@ drop-priority).
 Note the standing gap: `chips_width()` asserts against hand-computed numbers, not
 against `chip_run()`'s actual placement. The two are documented as mirrors and
 nothing enforces it — see `lcarcat-qm0.10`.
+
+### test/unit/run_prompt_data_tests.sh
+
+```bash
+bash test/unit/run_prompt_data_tests.sh
+```
+
+Covers `zsh/lcars_prompt_data.zsh`: the OSC 7447 envelope (version before the
+message type), percent-escaping of `%` and `;` in labels, chip assembly order and
+the kinds each state produces, hook installation order, and the emitted byte
+sequence across a full prompt cycle.
+
+The only suite that needs **no nvim** — it runs plain zsh and asserts on emitted
+bytes. That is the property the data/render split was made to get: before it,
+the chip payload was produced in an environment where nothing could show you it
+had broken.
+
+Two conventions worth copying if you add zsh tests:
+
+- Run under `setopt no_unset warn_create_global`. It caught three real bugs while
+  this suite was being written, including one that would have shipped.
+- Assertions print to **fd 3**, not stdout. Once the hooks are installed, zsh
+  fires `preexec_functions` before every command in the script too, so each
+  subsequent line emits an OSC `133;C` onto stdout. Reporting on fd 3 leaves
+  stdout free to redirect around those sections.
+- Capture hook output through a **file**, not `$(...)`. The hook functions mutate
+  shell state as well as emitting bytes, and command substitution runs them in a
+  subshell that throws the mutations away.
+
+### test/unit/run_osc_roundtrip_tests.sh
+
+```bash
+bash test/unit/run_osc_roundtrip_tests.sh
+```
+
+Cross-language: bytes from the **real zsh emitter**, through the **real Lua
+parser**. Neither side's idea of the wire format is hand-written.
+
+This exists because the other two suites each prove one side agrees with
+*itself*. Both can pass while the halves disagree — which is exactly the failure
+the split was made to prevent, since the emitter runs where nobody can see the
+payload and the parser runs where nobody can see the shell. It also asserts the
+emitter's protocol version matches the parser's, so the two halves of the repo
+cannot silently drift apart.
 - Call `vim.cmd("cq 1")` on any failure so nvim exits nonzero.
 - Expose the function under test as `M._function_name` in the module (Lua convention for semi-private testable functions).
 
