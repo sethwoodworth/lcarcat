@@ -10,12 +10,13 @@
 
 local M = {}
 
-local frame_buffer  = require("lcars.frame_buffer")
-local pty_session   = require("lcars.pty_session")
-local term_input    = require("lcars.term_input")
-local block_record  = require("lcars.block_record")
-local block_chips   = require("lcars.block_chips")
-local assets        = require("lcars.assets")
+local frame_buffer     = require("lcars.frame_buffer")
+local pty_session      = require("lcars.pty_session")
+local term_input       = require("lcars.term_input")
+local block_record     = require("lcars.block_record")
+local block_chips      = require("lcars.block_chips")
+local assets           = require("lcars.assets")
+local alternate_screen = require("lcars.alternate_screen")
 
 local AUGROUP = "LcarsTerminalWin"
 
@@ -110,6 +111,26 @@ local function warn_once_on_protocol_skew(version)
   )
 end
 
+-- True from the moment the frame's images come down for a full-screen program
+-- until they go back up. The guard is what makes restoring idempotent: the
+-- escape-hatch command, a real ESC[?1049l arriving afterwards, and session
+-- teardown can all call restore_frame_view() and only the first one acts.
+local _frame_hidden = false
+
+local function restore_frame_view()
+  alternate_screen.exit()
+  if not _frame_hidden then return end
+  _frame_hidden = false
+  if not session_active() then return end
+
+  local _, _, content_width = geometry(state.display_win)
+  pty_session.resize(content_width, vim.api.nvim_win_get_height(state.display_win))
+  frame_buffer.show_images()
+  if state.input_win and vim.api.nvim_win_is_valid(state.input_win) then
+    vim.api.nvim_set_current_win(state.input_win)
+  end
+end
+
 local function make_callbacks(fb)
   return {
     -- OSC 133;A. The record is created here — on_cwd and on_chips both arrive
@@ -177,6 +198,56 @@ local function make_callbacks(fb)
       warn_once_on_protocol_skew(version)
       if state.rec then state.rec.chips = block_chips.from_osc(chips) end
     end,
+
+    -- ESC[?1049h — a full-screen program (vim, less, fzf) took the screen.
+    -- Hide the frame's images before the float goes up: kitty draws graphics
+    -- over the terminal grid, and image.nvim cannot tell it has been covered
+    -- because the display window's buffer never changed.
+    on_alternate_screen_enter = function()
+      fb.hide_images()
+      _frame_hidden = true
+      local columns, rows = alternate_screen.enter({
+        on_input = pty_session.send_raw,
+        -- The float was closed by hand while the program still owns the PTY.
+        -- Put the frame back so the session is not left headless, but stay in
+        -- passthrough: dropping the program's bytes is silent and reversible,
+        -- whereas letting its redraws into the frame would write escape
+        -- sequences into the block history for good.
+        on_close = function()
+          restore_frame_view()
+          vim.notify(
+            "lcars: the alternate-screen window was closed while the program was still running. "
+              .. "Its output is being discarded — run :LcarsTermExitAlternateScreen once it has "
+              .. "exited to resync the session.",
+            vim.log.levels.WARN
+          )
+        end,
+      })
+      -- The PTY was sized to the frame's narrow content width; the program is
+      -- drawing into a full-tab float. Tell it so, or it formats to a screen
+      -- that isn't there.
+      if columns and rows then pty_session.resize(columns, rows) end
+    end,
+
+    -- Raw bytes while the alternate screen is up. A no-op once the float is
+    -- gone, which is what makes :LcarsTermExitAlternateScreen safe to use on a
+    -- program that is still alive — its output is dropped, not dumped into
+    -- the frame as garbage lines.
+    on_passthrough = function(bytes)
+      if alternate_screen.active() then alternate_screen.feed(bytes) end
+    end,
+
+    -- ESC[?1049l — primary screen restored. Idempotent: the escape-hatch
+    -- command may have already closed the float.
+    on_alternate_screen_exit = function()
+      restore_frame_view()
+    end,
+
+    -- The shell itself died (exit, kill). Anything on the alternate screen
+    -- died with it, so don't leave its float on top of a dead session.
+    on_exit = function()
+      restore_frame_view()
+    end,
   }
 end
 
@@ -185,6 +256,11 @@ end
 local function on_win_closed(args)
   local closed_win = tonumber(args.match)
   local other = (closed_win == state.display_win) and state.input_win or state.display_win
+
+  -- A full-screen program's float must never outlive the session that feeds
+  -- it — it would sit there taking keystrokes with nowhere to send them.
+  alternate_screen.exit()
+  _frame_hidden = false
 
   pty_session.stop()
   state.rec         = nil
@@ -289,5 +365,26 @@ function M.open()
 end
 
 vim.api.nvim_create_user_command("LcarsTerm", function() M.open() end, {})
+
+-- Escape hatch for a full-screen program that died without restoring the
+-- primary screen (a crash, a kill -9) — without this the session is stuck
+-- behind a float, swallowing every byte the shell writes.
+--
+-- It resyncs our view only; it does not signal the child. If the program is in
+-- fact still running, its output resumes flowing into the frame as raw escape
+-- sequences, so say so rather than letting that look like a new bug.
+vim.api.nvim_create_user_command("LcarsTermExitAlternateScreen", function()
+  local was_passthrough = pty_session.leave_alternate_screen()
+  restore_frame_view()
+  if was_passthrough then
+    vim.notify(
+      "lcars: left alternate-screen passthrough. The program was never told to quit — "
+        .. "if it is still running, its output will now land in the frame as raw escapes.",
+      vim.log.levels.WARN
+    )
+  else
+    vim.notify("lcars: no alternate-screen program was active.", vim.log.levels.INFO)
+  end
+end, {})
 
 return M

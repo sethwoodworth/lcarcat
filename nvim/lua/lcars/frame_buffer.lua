@@ -40,6 +40,17 @@ local _cw  = nil
 local _ch  = nil
 local _row = 0
 
+-- The opts table frame_renderer wants for any image call on this buffer.
+-- image_key_prefix keys the registry per block, so two blocks never collide.
+local function render_opts(rec)
+  return {
+    ns  = _ns, lp = _lp, bw = _bw,
+    win = _win or vim.api.nvim_get_current_win(),
+    cw  = _cw, ch  = _ch,
+    image_key_prefix = tostring(M.buf) .. "_" .. tostring(rec.buf_start),
+  }
+end
+
 function M.new(opts)
   opts = opts or {}
 
@@ -81,13 +92,7 @@ function M.open_block(rec)
 
   -- Place header images immediately so live blocks also get their elbow/vcap.
   -- place_images skips footer images when state == "live".
-  local r_opts = {
-    ns  = _ns, lp = _lp, bw = _bw,
-    win = _win or vim.api.nvim_get_current_win(),
-    cw  = _cw, ch  = _ch,
-    image_key_prefix = tostring(M.buf) .. "_" .. tostring(rec.buf_start),
-  }
-  renderer.place_images(M.buf, rec.buf_start, nil, rec, r_opts)
+  renderer.place_images(M.buf, rec.buf_start, nil, rec, render_opts(rec))
 end
 
 -- append_line: writes one ANSI-colored content line via baleia; adds stem extmark.
@@ -121,15 +126,7 @@ end
 -- close_block: clears header extmarks, re-renders header (final state/duration),
 -- writes 1-row footer, recolors content stem extmarks, places images.
 function M.close_block(rec)
-  local r_opts = {
-    ns  = _ns,
-    lp  = _lp,
-    bw  = _bw,
-    win = _win or vim.api.nvim_get_current_win(),
-    cw  = _cw,
-    ch  = _ch,
-    image_key_prefix = tostring(M.buf) .. "_" .. tostring(rec.buf_start),
-  }
+  local r_opts = render_opts(rec)
 
   -- Clear header extmarks before re-render to avoid duplicate cmd text / chips.
   vim.api.nvim_buf_clear_namespace(M.buf, _ns, rec.buf_start, rec.buf_start + 3)
@@ -157,6 +154,30 @@ function M.close_block(rec)
   -- Clear cached header images so the re-placement uses the final state color.
   renderer.clear_images(M.buf, rec.buf_start, r_opts)
   renderer.place_images(M.buf, rec.buf_start, rec.buf_end, rec, r_opts)
+end
+
+-- hide_images / show_images: drop and restore every block's elbow and cap
+-- placements.
+--
+-- Needed when something covers the display window without changing its buffer
+-- — the alternate-screen float (lcarcat-biv). image.nvim clears a
+-- buffer-bound image when the bound window switches buffers, but a float on
+-- top is invisible to it, and kitty composites graphics over the terminal
+-- grid, so the LCARS elbows would paint on top of vim.
+--
+-- Scoped to this buffer's blocks on purpose: image_registry's cache is shared
+-- with chrome.lua, tabline.lua and terminal_frame.lua, so clear_all() would
+-- take unrelated chrome down with it.
+function M.hide_images()
+  for _, rec in ipairs(M.blocks) do
+    renderer.clear_images(M.buf, rec.buf_start, render_opts(rec))
+  end
+end
+
+function M.show_images()
+  for _, rec in ipairs(M.blocks) do
+    renderer.place_images(M.buf, rec.buf_start, rec.buf_end, rec, render_opts(rec))
+  end
 end
 
 return M
