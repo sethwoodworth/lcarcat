@@ -14,3 +14,8 @@
 # Per-scenario screenshot output (not committed; may be published separately)
 test/screenshots/
 .DS_Store
+
+# adhoc ignores
+kitty-crash-report-2026-08-1600EDT.txt
+lcars-example-holodeck-programming.jpg
+voyager_padd_display_by_cmdrkerner_d1sbnjp-375w-2x.jpg
