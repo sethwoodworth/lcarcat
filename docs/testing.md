@@ -139,6 +139,7 @@ Each script exits 0 on pass, 1 on failure. Safe to run in CI or as a pre-commit 
 | `cmd_buffer_target_pane.sh` | Submitted text reaches RIGHT pane; LEFT pane is clean (regression: lcarcat-08g.1) |
 | `terminal_win.sh` | `:LcarsTerm` round-trips real commands through the PTY; session reuse and teardown (lcarcat-2z9) |
 | `terminal_win_pty_width.sh` | PTY `COLUMNS` equals the frame's content width; wide output stays inside the bar (regression: lcarcat-wve) |
+| `alternate_screen.sh` | A full-screen program gets an emulator float and its keystrokes; quitting it returns to the frame leaving an empty block; `:LcarsTermExitAlternateScreen` recovers from one that never restores the screen (lcarcat-biv) |
 
 Run all integration tests:
 ```bash

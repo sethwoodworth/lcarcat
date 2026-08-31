@@ -36,7 +36,7 @@ Drives a detached kitty instance via `kitty @ --to SOCK` remote control. Capture
 | `LCARCAT_SHOT_DIR` | `/tmp/lcarcat-screenshots` | Screenshot output directory |
 | `LCARCAT_TEST_DISPLAY` | (unset) | Set to `external` to move window to external display |
 | `TEST_CONF` | `test/kitty_test.conf` | kitty config for the test instance |
-| `LCARCAT_SKIP_SCREENSHOTS` | (unset) | Set to `1` to skip every `snapshot` call. Honored by the `test/integration/` scripts that capture (`term_input.sh`, `terminal_win.sh`, `terminal_win_pty_width.sh`) |
+| `LCARCAT_SKIP_SCREENSHOTS` | (unset) | Set to `1` to skip every `snapshot` call. Honored by the `test/integration/` scripts that capture (`term_input.sh`, `terminal_win.sh`, `terminal_win_pty_width.sh`, `alternate_screen.sh`) |
 | `LCARCAT_KEEP_ALIVE` | (unset) | Set to `1` to suppress the teardown trap in `nvim_harness_setup`, leaving kitty up for post-run probing |
 
 ### How it works
@@ -123,9 +123,11 @@ Delegate to the `visual-inspector` subagent. The inspection question shifts from
 
 ## Known gotchas for scripted nvim/PTY tests
 
-Found while building `test/integration/term_input.sh` (lcarcat-lyz). All four
-apply to any future test that drives nvim via `kitty @ send-text` and/or
-submits to a `pty_session`-backed shell.
+The first four were found while building `test/integration/term_input.sh`
+(lcarcat-lyz), the fifth and sixth while building
+`test/integration/alternate_screen.sh` (lcarcat-biv). All apply to any future
+test that drives nvim via `kitty @ send-text` and/or submits to a
+`pty_session`-backed shell.
 
 **`:startinsert` doesn't stick across a scripted Ex-command sequence.**
 Calling `vim.cmd('startinsert')` at the end of a `:luafile`-executed fixture
@@ -181,6 +183,20 @@ hasn't reached a read-loop yet just doesn't get processed in time). Wait at
 least ~4 seconds between starting the PTY and depending on a command having
 executed, or trigger off an actual event (e.g. the first OSC 133;A) instead
 of a fixed sleep once `terminal_win.lua` wires that up.
+
+**A full-screen program eats your Ex commands.** Once alternate-screen
+passthrough is active, nvim is in terminal mode inside the emulator float, so
+every keystroke — including the leading `:` — goes to the program, not to nvim.
+A `:lua ...` state dump sent while a pager is up simply never runs, and the
+symptom is a missing output file rather than an error. Send `<C-\><C-n>`
+(`$'\x1c\x0e'`) to drop to normal mode before driving nvim, and `i` to go back
+to terminal mode before typing at the program. Leaving terminal mode does not
+close the float, so `active()` assertions still hold either side of it.
+
+**`less -X` and a `-X` in `$LESS` disable the alternate screen outright.** A
+test that runs a pager to exercise passthrough will silently exercise the plain
+line path instead, and pass its unrelated assertions while proving nothing.
+`alternate_screen.sh` runs `LESS= less …` to neutralize the inherited setting.
 
 ---
 

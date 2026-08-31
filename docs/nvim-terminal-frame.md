@@ -303,6 +303,103 @@ A line of exactly `$COLUMNS` chars puts its last char at terminal col 172 —
 flush with the frame's right edge — and col 173 is empty. Regression-tested by
 `test/integration/terminal_win_pty_width.sh`.
 
+## Alternate-screen passthrough (lcarcat-biv)
+
+`vim`, `less`, `fzf`, `htop` and anything behind the pager do not emit lines —
+they emit `ESC[?1049h` and then drive the screen with absolute cursor
+addressing. There is nothing for `frame_buffer.append_line` to do with that, so
+for the span of one such program the frame steps aside entirely and a real
+terminal emulator takes the screen.
+
+### Why `nvim_open_term`, not `:terminal`
+
+`:terminal` spawns its own PTY. The full-screen program is already running on
+the PTY `pty_session` owns, so there is nothing to hand it. `nvim_open_term(buf,
+{ on_input = ... })` attaches nvim's VT220 emulator to a scratch buffer we feed
+with `nvim_chan_send`, and its `on_input` routes terminal-mode keystrokes back
+to the PTY we already have — the same escape hatch sketched above for the
+baleia-performance case, used here for a different reason.
+
+`alternate_screen.lua` owns the emulator and the float; `terminal_win.lua` only
+wires callbacks to it.
+
+### Three parser states, not two
+
+`pty_session._parse_chunk` used to have `text` and `osc`. Detecting the switch
+reliably needs two more:
+
+| State | Entered by | Behaviour |
+|---|---|---|
+| `csi` | `ESC[` in text mode | Accumulate to the final byte (0x40–0x7E). Alternate-screen private modes become events; **every other CSI is reassembled byte-identical into the line** — baleia consumes SGR codes downstream, so this state must be invisible to it. |
+| passthrough | `ESC[?1049h` | Forward whole slices to the emulator. No line building, no per-byte loop: one full-screen redraw is tens of kilobytes and `buf = buf .. b` is quadratic. |
+
+Two traps worth keeping in mind if you touch this:
+
+- **`ESC[?25l` is not an exit.** Full-screen programs hide the cursor
+  constantly. The parameter list must actually contain 1049, 1047 or 47.
+- **The switch can split anywhere.** `on_stdout` chunks fall where they fall, so
+  a lone `ESC` is carried as a flag (not parked in `buf`, which is what the old
+  parser did and why it could never have introduced the CSI that followed), and
+  passthrough holds back a trailing partial escape rather than forwarding half a
+  sequence.
+
+### TERM must not be `ansi`
+
+nvim defaults a pty job's `TERM` to `ansi`, whose terminfo entry **has no
+`smcup`** — no program will ever switch to the alternate screen, so none of the
+above can fire. `pty_session.start` sets `TERM=xterm-256color` (overridable via
+`opts.term`): what nvim's own `:terminal` uses, and what the libvterm emulator
+behind `nvim_open_term` renders.
+
+### The float has to be stripped bare
+
+The emulator lives in a full-tab float, so the frame, its input split, and every
+block's extmark state survive underneath untouched — there is no layout to
+rebuild on the way out. The cost is that three separate things will paint LCARS
+chrome onto the program's screen unless they are stopped, and none of them can
+tell they have been covered:
+
+1. **Block images.** image.nvim clears a buffer-bound image when its window
+   switches buffers; a float on top is invisible to it, and kitty composites
+   graphics *over* the grid. `frame_buffer.hide_images()`/`show_images()` drop
+   and restore them, scoped to this buffer's blocks — `image_registry` is shared
+   with `chrome.lua` and friends, so `clear_all()` would take unrelated chrome
+   down too.
+2. **Absolute-placed chrome.** `chrome.lua` and `terminal_frame.lua` place at
+   screen coordinates. `alternate_screen.enter` calls `disable()` on whichever
+   of them was enabled and re-enables exactly those on the way out.
+3. **Inherited window options.** `nvim_open_win` copies window-local options
+   from whatever window was current — the input panel, whose `winhighlight` maps
+   `SignColumn` to the orange stem — and `terminal_frame`'s `TermOpen` hook
+   forces `signcolumn=yes:1` on every terminal buffer. Both are cleared *after*
+   `nvim_open_term`, since that is when `TermOpen` fires.
+
+### What the block looks like afterwards
+
+Nothing was ever emitted to the frame, so the block is header + footer and no
+content lines — the command in the header, duration and exit chips in the
+footer. This needs no special handling: `on_command_done` already renders a
+block with zero content rows.
+
+### When the float is closed by hand
+
+Closing the float (`:q`, `:close`, or a config that maps `<Esc>` out of terminal
+mode followed by an Ex command) leaves the program running and still owning the
+PTY. `alternate_screen` watches `WinClosed` for its own float and restores the
+frame — chrome back on, block images back up — but deliberately **stays in
+passthrough**, discarding the program's bytes and saying so. Dropping them is
+silent and reversible; letting a full-screen redraw into the frame would write
+escape sequences into the block history permanently.
+
+### When the program never restores the screen
+
+A crash or `kill -9` leaves the session behind a float that swallows every byte
+the shell writes. `:LcarsTermExitAlternateScreen` forces the parser back to text
+mode and tears the float down. It deliberately does not signal the child — if
+the program is in fact still alive its output resumes landing in the frame as
+raw escape sequences, which the command says out loud rather than leaving it to
+look like a new bug.
+
 ## File map
 
 | File | Responsibility |
@@ -311,10 +408,11 @@ flush with the frame's right edge — and col 173 is empty. Regression-tested by
 | `image_registry.lua` | Transmit elbow/hcap PNGs once per session via APC escape; cache `(asset, cw, ch)` → kitty image ID. |
 | `frame_renderer.lua` | Pure render: given `(buf, start_row, rec)` write lines and return row count. Calls image_registry for placeholder cells. Uses baleia for content lines. |
 | `frame_buffer.lua` | Owns the display buffer (`modifiable=false` except during writes). `open_block`, `append_line`, `close_block`. |
-| `pty_session.lua` | `jobstart(shell, {pty=true})`. Carry-buffer for split chunks. OSC 133 / 7 / 7447 state machine. `M.send(text)` → `chansend`. |
+| `pty_session.lua` | `jobstart(shell, {pty=true})`. Carry-buffer for split chunks. OSC 133 / 7 / 7447 state machine, plus CSI scanning for the alternate-screen switch. `M.send(text)` → `chansend`; also `send_raw`, `resize`, `leave_alternate_screen`. |
 | `block_chips.lua` | Chip kind → highlight group; duration label formatting. The one place shell chip semantics become LCARS colors. |
 | `term_input.lua` | Orange-stem input split. `M.open(buf, opts)` configures a buffer/window created by the caller (does not call `nvim_open_win` itself). `opts.on_submit(cmd_text)` is a plain callback — term_input never requires `pty_session` or `terminal_win` by name. Telescope history. Does not touch `command_buffer.lua`. |
-| `terminal_win.lua` | Layout: display split (top) + input split (bottom). Wires pty_session callbacks to frame_buffer. `:LcarsTerm` command. |
+| `terminal_win.lua` | Layout: display split (top) + input split (bottom). Wires pty_session callbacks to frame_buffer and alternate_screen. `:LcarsTerm` and `:LcarsTermExitAlternateScreen` commands. |
+| `alternate_screen.lua` | Full-tab float running `nvim_open_term` for the span of one full-screen program. Suspends absolute-placed chrome while it is up. |
 
 Reuse from `block_demo.lua`: `chips_block()` pattern, `capcols()` math, chip/bar
 highlight logic. Do not delete `block_demo.lua` — it is the visual reference and
@@ -395,7 +493,6 @@ These are child beads under `lcarcat-qm0`. Do not add them to the minimal demo.
 | Stderr separation (different stem color) | `lcarcat-80m` |
 | Fold/unfold blocks to pill row | `lcarcat-ubk` |
 | Block navigation keymaps (`[b`/`]b`, `zf`/`zo`) | `lcarcat-014` |
-| Alternate screen passthrough (vim, less, fzf) | `lcarcat-biv` |
 | Multiple concurrent sessions | `lcarcat-3ft` |
 | Command-in-header notch (Tab C style) | `lcarcat-e0d` |
 | Live update debounce | `lcarcat-z8h` |
