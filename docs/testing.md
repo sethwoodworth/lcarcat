@@ -177,7 +177,7 @@ When changing cell dimensions, font, or `gen_swoops.py` output:
 Pass `--cellw` and `--cellh` explicitly to `analyze_gutter_cells.py` if you've changed the test font size:
 
 ```bash
-python3 test/analyze_gutter_cells.py /tmp/lcarcat-screenshots/01-eob-gutter.png \
+python3 test/analyze_gutter_cells.py test/screenshots/nvim_eob_gutter/01-eob-gutter.png \
   --cellw 20 --cellh 40 --expect-bg periwinkle --verbose
 ```
 

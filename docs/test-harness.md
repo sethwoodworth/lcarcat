@@ -61,6 +61,15 @@ the permission — the pass/fail checks do not depend on the PNGs.
 
 Use stable `id:N` window addressing rather than `recent:N`. The `recent:N` index shifts when windows are opened or closed, causing commands to target the wrong window. Get window IDs once via `kitty @ ls` and reuse them throughout a scenario.
 
+### `enabled_layouts splits` is mandatory in `kitty_test.conf`
+
+Without it, `kitty @ launch --location=vsplit` (and `hsplit`) silently falls
+back to the stacked layout: the new window is created, every command that
+targets it succeeds, and the scenario passes its own plumbing checks — but the
+panes are on top of one another rather than side by side, so any geometry or
+adjacency assertion is measuring a layout that isn't there. `test/kitty_test.conf`
+sets it; keep it there, and set it in any new test config.
+
 ### Fullscreen capture and pixel coordinates
 
 The test kitty launches fullscreen (`--start-as=fullscreen`) with `window_padding_width 0` and `placement_strategy top-left`. This means:
