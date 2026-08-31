@@ -331,6 +331,143 @@ do
   deep_eq("26b foreign namespace ignored", items, {})
 end
 
+-- ── alternate-screen passthrough (lcarcat-biv) ───────────────────────────
+--
+-- While a full-screen program owns the screen the parser stops building lines
+-- and forwards raw bytes to a real emulator instead. These cases pin the two
+-- transitions, which arrive in a byte stream that can split them anywhere.
+
+local function pt(bytes)  return { kind = "passthrough", bytes = bytes } end
+
+-- A carry already inside passthrough, as the next chunk would find it.
+local function in_alternate_screen()
+  return { buf = "", osc = nil, skip_lines = false,
+           alternate_screen = true, alternate_screen_tail = "" }
+end
+
+-- ── test 27: entering flushes the pending line, then forwards the switch ──
+-- The switch sequence itself goes downstream so the emulator sees a faithful
+-- stream and manages its own screen state.
+
+do
+  local carry, items = parse(fresh(), "hello" .. ESC .. "[?1049h")
+  deep_eq("27a enter", items, {
+    line("hello"),
+    ev("alternate_screen_enter"),
+    pt(ESC .. "[?1049h"),
+  })
+  eq("27b carry is in passthrough", carry.alternate_screen, true)
+end
+
+-- ── test 28: the switch split at every byte boundary still lands ─────────
+-- The reason ESC is carried as a flag rather than parked in buf: a chunk that
+-- ends on the ESC must still introduce the CSI that follows it.
+
+do
+  local splits = { 1, 2, 3, 5, 7 }  -- after ESC, ESC[, ESC[?, ESC[?10, ESC[?1049
+  local whole  = ESC .. "[?1049h"
+  for _, at in ipairs(splits) do
+    local carry, items = parse(fresh(), whole:sub(1, at))
+    deep_eq("28 split at " .. at .. " emits nothing yet", items, {})
+    local _, rest = parse(carry, whole:sub(at + 1))
+    deep_eq("28 split at " .. at .. " completes", rest, {
+      ev("alternate_screen_enter"),
+      pt(ESC .. "[?1049h"),
+    })
+  end
+end
+
+-- ── test 29: ESC[?25l is not an exit ─────────────────────────────────────
+-- Full-screen programs hide the cursor constantly. A "private mode ending in
+-- l" match would read every one of those as a restore and drop out of
+-- passthrough mid-program.
+
+do
+  local carry, items = parse(in_alternate_screen(), ESC .. "[?25l" .. "drawing")
+  deep_eq("29a hide-cursor forwarded, no exit", items, { pt(ESC .. "[?25l" .. "drawing") })
+  eq("29b still in passthrough", carry.alternate_screen, true)
+end
+
+-- ── test 30: exiting hands the remainder back to the text scanner ────────
+-- The shell's post-program prompt redraw — including its OSC 133;A — arrives
+-- in the same chunk as the restore, and must be parsed, not forwarded.
+
+do
+  local carry, items = parse(in_alternate_screen(),
+    ESC .. "[?1049l" .. ESC .. "]133;A" .. ST .. "back\n")
+  deep_eq("30a exit", items, {
+    pt(ESC .. "[?1049l"),
+    ev("alternate_screen_exit"),
+    ev("prompt_start"),
+    line("back"),
+  })
+  eq("30b carry left passthrough", carry.alternate_screen, false)
+end
+
+-- ── test 31: a restore split across chunks is held back, not forwarded ───
+-- Forwarding a partial escape would hand the emulator half a sequence and
+-- leave us in passthrough forever.
+
+do
+  local carry, items = parse(in_alternate_screen(), "abc" .. ESC .. "[?10")
+  deep_eq("31a partial restore held back", items, { pt("abc") })
+  eq("31b tail carried", carry.alternate_screen_tail, ESC .. "[?10")
+
+  local carry2, items2 = parse(carry, "49l")
+  deep_eq("31c completes on the next chunk", items2, {
+    pt(ESC .. "[?1049l"),
+    ev("alternate_screen_exit"),
+  })
+  eq("31d tail cleared", carry2.alternate_screen_tail, "")
+end
+
+-- ── test 32: the older alternate-screen modes count too ──────────────────
+-- 1047 and 47 predate 1049 and still appear in some terminfo entries.
+
+do
+  local _, items = parse(fresh(), ESC .. "[?1047h")
+  deep_eq("32a 1047 enters", items, { ev("alternate_screen_enter"), pt(ESC .. "[?1047h") })
+
+  local _, items47 = parse(fresh(), ESC .. "[?47h")
+  deep_eq("32b 47 enters", items47, { ev("alternate_screen_enter"), pt(ESC .. "[?47h") })
+
+  -- Combined with another private mode in one sequence.
+  local _, both = parse(fresh(), ESC .. "[?1049;25h")
+  deep_eq("32c a combined parameter list still enters", both,
+    { ev("alternate_screen_enter"), pt(ESC .. "[?1049;25h") })
+end
+
+-- ── test 33: every other CSI reaches the line text byte-identical ────────
+-- The regression guard for the whole CSI-scanning change. baleia consumes SGR
+-- codes out of the line text downstream, so the new parser state has to be
+-- invisible to it.
+
+do
+  local _, items = parse(fresh(), ESC .. "[1;31mred" .. ESC .. "[0m" .. "\n")
+  deep_eq("33a SGR preserved", items, { line(ESC .. "[1;31mred" .. ESC .. "[0m") })
+
+  -- Cursor addressing, erase, and a non-private h/l are all just text here.
+  local _, moves = parse(fresh(), ESC .. "[2J" .. ESC .. "[10;5H" .. ESC .. "[4hx\n")
+  deep_eq("33b other CSI preserved", moves,
+    { line(ESC .. "[2J" .. ESC .. "[10;5H" .. ESC .. "[4hx") })
+
+  -- A CSI split across chunks is reassembled, not dropped.
+  local carry, none = parse(fresh(), "a" .. ESC .. "[1;3")
+  deep_eq("33c nothing emitted mid-CSI", none, {})
+  local _, rest = parse(carry, "1mb\n")
+  deep_eq("33d reassembled across the boundary", rest, { line("a" .. ESC .. "[1;31mb") })
+end
+
+-- ── test 34: a C0 control inside a CSI aborts it ─────────────────────────
+-- Guards against a desynced stream swallowing a line ending forever: the raw
+-- bytes go back into the line and the control byte is handled normally.
+
+do
+  local _, items = parse(fresh(), "x" .. ESC .. "[12\nrest\n")
+  deep_eq("34a newline ends the line rather than feeding the CSI", items,
+    { line("x" .. ESC .. "[12"), line("rest") })
+end
+
 -- ── summary ───────────────────────────────────────────────────────────────
 
 print(string.format("\n%d passed, %d failed", PASS, FAIL))
