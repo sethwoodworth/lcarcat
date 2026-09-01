@@ -146,6 +146,15 @@ Run all integration tests:
 for f in test/integration/*.sh; do echo "--- $f ---"; bash "$f" && echo PASS || echo FAIL; done
 ```
 
+**Prefer a synthetic program to a real one when asserting on behaviour rather
+than on integration.** `test/fixtures/alternate_screen_program.sh` is the
+pattern: it enters the alternate screen, draws, leaves, and exits with a status
+passed as `$1`. Driving a real pager instead means a terminfo lookup, an
+inherited `$LESS` that can disable the very path under test, a keystroke to make
+it quit, and an exit code you hope for rather than choose. Keep one real program
+in the test for the genuine end-to-end round-trip, and assert the rest against
+the fixture.
+
 ### test/captures/ — reference screenshots, human-evaluated
 
 These produce PNGs in `test/screenshots/<name>/` but have no programmatic assertion. Run them when you want a reference capture or are evaluating a visual change.
