@@ -29,6 +29,7 @@ from .assets import Asset, AssetLibrary
 from .canvas import Canvas, text_width, truncate
 from .geometry import Rect
 from .images import ImageTransmitter
+from .interaction import Click, Handler, HitMap, on_click
 from .palette import CANVAS, TEXT, Color
 
 # A cap needs clear air before it or it reads as a blob stuck to the last chip.
@@ -49,11 +50,21 @@ class Painter:
         canvas: Canvas,
         assets: AssetLibrary,
         images: ImageTransmitter,
+        hits: Optional[HitMap] = None,
     ) -> None:
         self.canvas = canvas
         self.assets = assets
         self.images = images
+        #: Clickable regions claimed during this frame. Anything that draws may
+        #: register one; nothing is required to.
+        self.hits = hits if hits is not None else HitMap()
         self._transmissions: List[str] = []
+
+    def claim(self, rect: Rect, handler: Optional[Handler], label: str = "",
+              wants_wheel: bool = False) -> None:
+        """Mark a rectangle as interactive. A ``None`` handler claims nothing."""
+        if handler is not None:
+            self.hits.add(rect, handler, label, wants_wheel)
 
     def register(self, asset: Asset) -> int:
         """Queue ``asset`` for transmission and return the id placeholders will use."""
@@ -105,6 +116,9 @@ class Chip:
     style: ChipStyle = ChipStyle.COLOR
     label_color: Optional[Color] = None
     padding: int = 1
+    #: Makes the chip clickable wherever it is drawn -- in a bar's header, in a
+    #: row of a list, anywhere draw_chip or draw_chips places it.
+    action: Optional[Handler] = None
 
     @property
     def width(self) -> int:
@@ -144,6 +158,7 @@ def draw_chip(
         painter.canvas.horizontal_run(x, y + row, chip.width, fill)
     painter.canvas.text(x + chip.padding, y + rows - 1, chip.label,
                         foreground=label_color)
+    painter.claim(Rect(x, y, chip.width, rows), chip.action, chip.label)
     return x + chip.width
 
 
@@ -194,6 +209,7 @@ def draw_chips(
             canvas.horizontal_run(body_start, y + row, width, fill)
         canvas.text(body_start + chip.padding, label_row, chip.label,
                     foreground=label_color)
+        painter.claim(Rect(body_start, y, width, rows), chip.action, chip.label)
 
         column = body_start
 
@@ -326,6 +342,7 @@ def draw_pill(
     label_color: Optional[Color] = None,
     align: str = "center",
     label_row_offset: Optional[int] = None,
+    action: Optional[Handler] = None,
 ) -> int:
     """A segment capped at BOTH ends. Returns the column after it.
 
@@ -353,6 +370,7 @@ def draw_pill(
         left_end=End.CAP,
         right_end=End.CAP,
     ).draw(painter)
+    painter.claim(Rect(x, y, width, rows), action, label)
 
     if label:
         body = Rect(x + cap_columns, y, width - 2 * cap_columns, rows)
@@ -424,12 +442,17 @@ class RailBlock:
 
     ``weight`` is proportional height within the rail; blocks are separated by a
     black gap so they read as distinct segments rather than one long bar.
+
+    ``action`` makes the block clickable. A rail of labeled blocks is the most
+    button-like thing LCARS has, so this is the obvious place to hang navigation
+    -- but nothing here assumes that is what it is for.
     """
 
     label: str = ""
     color: Optional[Color] = None
     weight: float = 1.0
     label_color: Optional[Color] = None
+    action: Optional[Handler] = None
 
 
 def draw_rail(
@@ -462,6 +485,7 @@ def draw_rail(
             continue
         body = Rect(rect.x, y, rect.width, height)
         canvas.fill(body, block.color or color)
+        painter.claim(body, block.action, block.label)
         if block.label and rect.width >= 3:
             label = truncate(block.label, rect.width - 1)
             label_row = body.bottom - 1

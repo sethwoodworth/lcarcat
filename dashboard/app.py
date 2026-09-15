@@ -24,8 +24,10 @@ from .canvas import (Canvas, enter_full_screen, frame, leave_full_screen,
                      restore)
 from .geometry import terminal_size
 from .images import ImageTransmitter
+from .interaction import Button, Click, HitMap
 from .palette import CANVAS
 from .segments import Painter
+from .terminal_input import TerminalInput
 
 
 class Dashboard:
@@ -47,6 +49,9 @@ class Dashboard:
         self.size = (0, 0)
         self.canvas: Optional[Canvas] = None
         self._resized = True
+        #: Clickable regions, rebuilt by every render.
+        self.hits = HitMap()
+        self.running = True
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -92,7 +97,8 @@ class Dashboard:
         """Build one frame and return it as a string, without writing it."""
         canvas = self._ensure_canvas()
         canvas.fill(canvas.rect, background=CANVAS)
-        painter = Painter(canvas, self.assets, self.images)
+        self.hits.clear()
+        painter = Painter(canvas, self.assets, self.images, hits=self.hits)
 
         screen = canvas.rect
         if screen.width < 40 or screen.height < 16:
@@ -109,6 +115,20 @@ class Dashboard:
         transmissions = painter.transmissions() if self.allow_images else ""
         return transmissions + frame(canvas)
 
+    def switch_layout(self, name: str) -> bool:
+        """Swap the displayed layout. Returns whether anything changed.
+
+        Layouts were always data -- built by name, holding their own widgets --
+        so switching is an assignment. The only care needed is refreshing the new
+        layout's widgets, which have never been asked for data before.
+        """
+        if name == self.layout.name:
+            return False
+        self.layout = layouts.build(name)
+        self.layout.on_navigate = self.switch_layout
+        self.refresh(force=True)
+        return True
+
     def render_once(self) -> None:
         self.stream.write(self.compose())
         self.stream.flush()
@@ -116,14 +136,29 @@ class Dashboard:
     # -- loops -------------------------------------------------------------
 
     def run(self, interval: float = 1.0, frames: Optional[int] = None,
-            full_screen: bool = True, hold: bool = False) -> None:
-        """Redraw on a timer until interrupted, or for ``frames`` frames.
+            full_screen: bool = True, hold: bool = False,
+            interactive: bool = True, mouse: bool = True) -> None:
+        """Redraw on a timer, responding to input between frames.
 
-        ``hold`` keeps the last frame on screen after the frame budget runs out,
-        waiting to be interrupted. That is what a screenshot needs: a dashboard
-        that exits restores the screen underneath it, and one that exits on the
-        normal screen gets its top rows scrolled away by the next shell prompt.
+        ``hold`` keeps the last frame up after the frame budget runs out. That is
+        what a screenshot needs: a dashboard that exits restores the screen
+        underneath it, and one that exits on the normal screen gets its top rows
+        scrolled away by the next shell prompt.
+
+        ``interactive`` puts the terminal in cbreak mode and enables mouse
+        reporting. It is off for captures, where there is nobody to click and
+        where leaving the terminal in a modified state would be a hazard.
         """
+        if not interactive:
+            self._run_timed(interval, frames, full_screen, hold)
+            return
+
+        with TerminalInput(mouse=mouse, on_exit=self._restore) as source:
+            self._run_interactive(source, interval, frames, full_screen, hold)
+
+    def _run_timed(self, interval: float, frames: Optional[int],
+                   full_screen: bool, hold: bool) -> None:
+        """The non-interactive path: draw, sleep, repeat."""
         if full_screen:
             self.stream.write(enter_full_screen())
             self.stream.flush()
@@ -143,6 +178,69 @@ class Dashboard:
         finally:
             self.stream.write(leave_full_screen() if full_screen else restore())
             self.stream.flush()
+
+    def _run_interactive(self, source: TerminalInput, interval: float,
+                         frames: Optional[int], full_screen: bool,
+                         hold: bool) -> None:
+        """Draw, then wait for input *or* the next tick, whichever comes first.
+
+        The wait is the whole point: a plain sleep would swallow clicks for up to
+        a second, and under ``hold`` -- a sleep of an hour -- forever.
+        """
+        if full_screen:
+            self.stream.write(enter_full_screen())
+            self.stream.flush()
+        drawn = 0
+        try:
+            while self.running:
+                self.refresh()
+                self.render_once()
+                drawn += 1
+                if frames is not None and drawn >= frames and not hold:
+                    break
+
+                deadline = time.time() + interval
+                redraw = False
+                while not redraw and time.time() < deadline:
+                    key, click = source.poll(timeout=deadline - time.time())
+                    if click is not None:
+                        redraw = self.hits.dispatch(click)
+                    elif key is not None:
+                        redraw = self.handle_key(key)
+                    if not self.running:
+                        return
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.stream.write(leave_full_screen() if full_screen else restore())
+            self.stream.flush()
+
+    def handle_key(self, key) -> bool:
+        """Keyboard shortcuts. Returns whether to redraw immediately.
+
+        Digits select a layout by position, matching the order the navigation
+        rail draws them, so the keyboard and the mouse address the same list.
+        """
+        if key in ("q", "Q") or key.code == 3:  # 3 is ^C under cbreak
+            self.running = False
+            return False
+        if key in ("r", "R"):
+            self.refresh(force=True)
+            return True
+        if str(key).isdigit():
+            index = int(str(key)) - 1
+            names = layouts.names()
+            if 0 <= index < len(names):
+                return self.switch_layout(names[index])
+        return False
+
+    def _restore(self) -> None:
+        """Put the screen back. Safe to call more than once."""
+        try:
+            self.stream.write(leave_full_screen())
+            self.stream.flush()
+        except Exception:  # noqa: BLE001 - nothing useful to do while dying
+            pass
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -194,6 +292,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="render at a fixed size instead of measuring the terminal",
     )
     parser.add_argument(
+        "--no-interactive", action="store_true",
+        help="do not read the keyboard or mouse; just redraw on the timer",
+    )
+    parser.add_argument(
+        "--no-mouse", action="store_true",
+        help="keyboard only. Mouse reporting takes over click-to-select in the "
+             "terminal (hold shift to bypass it), so this turns it off",
+    )
+    parser.add_argument(
         "--list-layouts", action="store_true",
         help="print the available layouts and exit",
     )
@@ -225,6 +332,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     dashboard = Dashboard(layout, allow_images=not arguments.no_images)
 
+    # A one-shot render has nobody to click it, and putting the terminal into
+    # cbreak plus mouse reporting for a single frame is a hazard with no upside.
+    interactive = not (arguments.no_interactive or arguments.once
+                       or arguments.hold or arguments.frames is not None)
+    if interactive:
+        layout.on_navigate = dashboard.switch_layout
+
     try:
         signal.signal(signal.SIGWINCH, dashboard.note_resize)
     except (AttributeError, ValueError):
@@ -243,6 +357,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         frames=1 if arguments.once else arguments.frames,
         full_screen=not arguments.no_full_screen,
         hold=arguments.hold,
+        interactive=interactive,
+        mouse=not arguments.no_mouse,
     )
     return 0
 

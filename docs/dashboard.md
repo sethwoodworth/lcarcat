@@ -49,6 +49,53 @@ coordinates instead of printing in order. Two things fall out of that:
 
 ---
 
+## Interaction
+
+Clicks are dispatched against a **hit map** rebuilt every frame. Anything that
+draws may claim a rectangle:
+
+```python
+painter.claim(rect, handler, label="WHAT IT IS")
+```
+
+Segments already do it where it makes sense — `RailBlock`, `Chip` and
+`draw_pill` all take an `action`, so a rail block, a header chip or a pill
+becomes a button by passing one. A widget wanting something finer (a single row
+of a list, a marker on a plot) calls `painter.claim` directly.
+
+Two properties worth relying on:
+
+- **Later registration wins.** Rendering nests outermost-first — frame, panel,
+  widget — so a widget's own regions beat the chrome underneath them, matching
+  what is visually on top.
+- **Regions never outlive a frame.** The map is cleared and rebuilt rather than
+  diffed, so a pane that moved, shrank or vanished cannot leave a stale
+  clickable rectangle behind.
+
+Navigation is the first use: `Layout.navigation_blocks()` returns one rail block
+per layout with the current one lit and inert. It is deliberately **not** tied to
+the outer frame — if the frame goes away, those blocks move elsewhere unchanged.
+Layouts customise `decorative_rail_blocks()`, *not* `frame_rail_blocks()`;
+overriding the latter would silently drop navigation, and a test pins that.
+
+Keyboard: `q` quits, `r` forces a refresh, digits `1`–`n` select a layout in the
+same order the rail draws them.
+
+### What mouse reporting costs
+
+Turning on SGR mouse mode means kitty sends clicks to the dashboard instead of
+selecting text. **Hold shift** for the terminal's own behaviour, or run with
+`--no-mouse`.
+
+The modes must be turned off again or the shell is left emitting escapes on every
+mouse movement. `blessed`'s context managers cover the ordinary paths and
+`TerminalInput` adds SIGTERM/SIGHUP handlers for the ones they cannot reach — a
+context manager does not run on a signal. Interactive mode is off automatically
+for `--once`, `--frames` and `--hold`, where there is nobody to click and the
+terminal should not be touched.
+
+---
+
 ## Segments
 
 The reusable vocabulary, following `docs/lcars-design.md`. Segments enforce the
@@ -64,6 +111,7 @@ columns precede every cap.
 | `Panel` | header bar + rail + footer bar, returning a content `Rect` | composite |
 | `draw_meter` | a segmented LCARS bar meter | cells |
 | `draw_sparkline` | one row of block glyphs tracking a series | cells |
+| `draw_pill` | a segment capped at both ends; optionally a button | cells + 2 images |
 
 `Panel` is the unit a widget actually meets. It paints the chrome and hands back
 the rectangle to draw inside, so no widget computes a chrome offset. Styles:
@@ -186,15 +234,36 @@ heavy screenshot call. Worth revisiting to flip between AIA wavelengths.
 
 ### Ephemeris
 
-Self-contained, no `astropy`. Two published low-precision methods: JPL's
-*Approximate Positions of the Planets* (Keplerian elements plus linear rates,
-then Kepler's equation) for the planets, and a truncated lunar series from Meeus
-ch. 47 for the moon.
+`astropy` supplies the sun, the moon and the eight planets.
 
-`astropy` is more accurate, but it costs several seconds to import, and a
-dashboard that redraws on a timer cannot pay that — the widget would spend longer
-loading an ephemeris library than drawing the screen. The accuracy is not the
-constraint either: the orrery plots at a few cells per astronomical unit.
+An earlier version computed them from Keplerian elements, justified by astropy's
+import cost. That justification did not survive being measured properly:
+
+| | |
+|---|---|
+| warm import | 0.30–0.50 s, once |
+| first query | 0.34 s, once |
+| **nine bodies, subsequently** | **0.02–0.04 s per refresh** |
+
+The figure that drove the original decision — 3.8 s — came from
+`uv run --with astropy`, which folds environment resolution into the
+measurement, taken once on cold bytecode. Four hundredths of a second per
+refresh on a background thread is not worth trading accuracy for.
+
+**Minor planets are still computed locally**, because no ephemeris astropy can
+reach contains them. Its `builtin` covers the sun, the moon and the eight
+planets and nothing else — not even Pluto — and Ceres, Haumea, Makemake and Eris
+appear in no DE kernel at all. Those five use osculating elements from JPL's
+Small-Body Database with a two-body propagation.
+
+Their *frame* conversions still go through astropy. One trap worth knowing:
+convert to `ICRS` rather than `GCRS` and Ceres lands 22° wrong, because ICRS is
+barycentric and a body at 2.7 au has a large parallax from Earth's 1 au offset.
+
+`astropy.utils.iers.conf.auto_download` is switched **off**. Earth-orientation
+data is fetched on demand by default, which makes the first query depend on the
+network and can stall startup; the bundled table is far better than anything
+this dashboard displays.
 
 Set the observing site — altitude and azimuth are meaningless without one:
 
@@ -234,7 +303,7 @@ squares the corner.
 
 | Question | Run |
 |----------|-----|
-| Does the arithmetic hold — splits, truncation, parsing, ephemeris? | `python3 test/unit/dashboard_test.py` |
+| Does the arithmetic hold — splits, truncation, parsing, ephemeris? | `uv run --with astropy --with pillow python test/unit/dashboard_test.py` |
 | Do the elbows meet their bars? Does it look right? | `bash test/captures/dashboard.sh` |
 | Does the tab bar render? | `bash test/captures/tab_bar.sh` |
 

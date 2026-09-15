@@ -1,39 +1,38 @@
 """Positions of the sun, moon and planets.
 
-Self-contained on purpose. ``astropy`` gives far better numbers, but it costs
-several seconds to import, and a dashboard that redraws on a timer cannot pay
-that -- the widget would spend more time loading an ephemeris library than
-drawing the screen. The accuracy this buys is not the constraint either: the
-orrery plots bodies at a few cells per astronomical unit, and the readout shows
-positions to the arcminute.
+``astropy`` does the work for the sun, the moon and the eight planets. An
+earlier version of this module computed them from Keplerian elements instead,
+justified by astropy's import cost -- a justification that did not survive being
+measured properly. On this machine, from an installed environment:
 
-Two standard low-precision methods, both from published sources:
+===========================  ========
+warm import                  0.30-0.50 s, once
+first query                  0.34 s, once
+nine bodies, subsequently    0.02-0.04 s per refresh
+===========================  ========
 
-* planets -- JPL's *Approximate Positions of the Planets*: Keplerian elements at
-  J2000 plus linear rates, then Kepler's equation.
-* moon -- a truncated lunar series (Meeus, *Astronomical Algorithms*, ch. 47),
-  the leading terms only.
+The earlier figure of 3.8 s came from ``uv run --with astropy``, which folds
+environment resolution into the measurement, taken once on cold bytecode. Four
+hundredths of a second per refresh, on a background thread, against a sixty
+second interval, is not a cost worth trading accuracy for.
 
-Measured against ``astropy``'s ephemeris at three dates spread over 2025-2027
-(the check is ``EphemerisAccuracyTest`` in ``test/unit/dashboard_test.py``, which
-skips when astropy is absent):
+**Minor planets are still computed here**, because no ephemeris astropy can
+reach contains them. Its ``builtin`` covers the sun, the moon and the eight
+planets and nothing else -- not even Pluto -- and while a downloaded DE kernel
+adds Pluto, Ceres, Haumea, Makemake and Eris appear in no DE kernel at all.
+Those five use osculating elements from JPL's Small-Body Database and a
+two-body propagation, which is good for a few years either side of the epoch.
 
-===========  ==========================  ===================
-body         worst angular separation    worst distance error
-===========  ==========================  ===================
-sun          0.6 arcmin                  0.00005 au
-planets      5.0 arcmin (Saturn)         0.006 au (Uranus)
-moon         56 arcmin                   0.00004 au
-===========  ==========================  ===================
+Their *frame* conversions still go through astropy: the Keplerian solution
+produces a heliocentric ecliptic vector, which is handed to a
+``HeliocentricTrueEcliptic`` coordinate and transformed like anything else. That
+matters -- converting to ICRS rather than GCRS puts Ceres 22 degrees wrong,
+because ICRS is barycentric and a body at 2.7 au has a large parallax from
+Earth's one-au offset.
 
-The moon is the weak one -- just under a degree, or roughly two lunar diameters.
-That is inherent to a truncated series, and it is acceptable here because nothing
-this dashboard shows depends on better: the phase disc, the illuminated fraction
-and whether the moon is above the horizon all survive a degree of error. Do not
-reuse this module for anything that needs the moon placed among stars.
-
-Angles are degrees at the boundary and radians inside. Distances are
-astronomical units, except the moon's, which is kilometres.
+Angles are degrees at the boundary. Distances are astronomical units, except the
+moon's, which is kilometres. The public functions take a Julian Day so callers
+need no astropy types of their own.
 """
 from __future__ import annotations
 
@@ -42,6 +41,20 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
+
+import astropy.units as units
+from astropy.coordinates import (AltAz, CartesianRepresentation, EarthLocation,
+                                 GCRS, GeocentricTrueEcliptic,
+                                 HeliocentricTrueEcliptic, SkyCoord, get_body)
+from astropy.time import Time
+from astropy.utils import iers
+
+# Earth-orientation corrections are downloaded on demand by default, which makes
+# the first query depend on the network and can stall a dashboard's startup.
+# The bundled table is accurate to far better than anything shown here -- these
+# are readouts to the arcminute and a plot a few hundred pixels wide -- so the
+# download is switched off and astropy falls back to what ships with it.
+iers.conf.auto_download = False
 
 J2000 = 2451545.0
 DAYS_PER_CENTURY = 36525.0
@@ -139,6 +152,21 @@ MINOR_PLANET_ORDER = ("CERES", "PLUTO", "HAUMEA", "MAKEMAKE", "ERIS")
 #: Gaussian gravitational constant expressed as degrees per day, so mean motion
 #: is ``GAUSSIAN_DEGREES_PER_DAY / a ** 1.5`` straight from Kepler's third law.
 GAUSSIAN_DEGREES_PER_DAY = 0.9856076686
+
+#: Bodies astropy's builtin ephemeris resolves. Anything else falls to the
+#: Keplerian path below.
+ASTROPY_BODIES = frozenset({
+    "SUN", "MOON", "MERCURY", "VENUS", "EARTH", "MARS",
+    "JUPITER", "SATURN", "URANUS", "NEPTUNE",
+})
+
+#: Semi-major axes in au, for ordering orbit rings sun-outward without asking
+#: astropy for a position first.
+PLANET_SEMI_MAJOR_AXIS: Dict[str, float] = {
+    "MERCURY": 0.38709927, "VENUS": 0.72333566, "EARTH": 1.00000261,
+    "MARS": 1.52371034, "JUPITER": 5.20288700, "SATURN": 9.53667594,
+    "URANUS": 19.18916464, "NEPTUNE": 30.06992276,
+}
 
 #: Mean apparent magnitude at a typical elongation. Only used to size a plotted
 #: marker and to sort a "what is up tonight" list, never reported as a number.
@@ -295,28 +323,6 @@ def orbital_position(
     return (x, y, z)
 
 
-def heliocentric_ecliptic(name: str, jd: float) -> Tuple[float, float, float]:
-    """A body's position in au, in J2000 ecliptic coordinates centred on the sun.
-
-    Accepts a planet or a minor planet; the two use different element sets and
-    different propagation, and this picks the right one by name.
-    """
-    if name in MINOR_PLANET_ELEMENTS:
-        return minor_planet_ecliptic(name, jd)
-
-    elements = PLANET_ELEMENTS[name]
-    centuries = centuries_since_j2000(jd)
-    (semi_major, eccentricity, inclination, mean_longitude,
-     perihelion_longitude, node_longitude) = [
-        value + rate * centuries for value, rate in elements
-    ]
-    return orbital_position(
-        semi_major, eccentricity, inclination, node_longitude,
-        perihelion_longitude - node_longitude,
-        mean_longitude - perihelion_longitude,
-    )
-
-
 def minor_planet_ecliptic(name: str, jd: float) -> Tuple[float, float, float]:
     """A minor planet's heliocentric position, propagated from its JPL epoch.
 
@@ -334,87 +340,74 @@ def minor_planet_ecliptic(name: str, jd: float) -> Tuple[float, float, float]:
     )
 
 
-def ecliptic_to_equatorial(x: float, y: float, z: float) -> Tuple[float, float, float]:
-    obliquity = math.radians(OBLIQUITY_J2000)
-    return (x,
-            y * math.cos(obliquity) - z * math.sin(obliquity),
-            y * math.sin(obliquity) + z * math.cos(obliquity))
+def _time(jd: float) -> Time:
+    return Time(jd, format="jd", scale="utc")
 
 
-def greenwich_sidereal_degrees(jd: float) -> float:
-    """Greenwich mean sidereal time in degrees (Meeus 12.4)."""
-    days = jd - J2000
-    centuries = days / DAYS_PER_CENTURY
-    return _normalise_degrees(
-        280.46061837 + 360.98564736629 * days
-        + 0.000387933 * centuries ** 2 - centuries ** 3 / 38710000.0)
+def _location(observer: Observer) -> EarthLocation:
+    return EarthLocation(lat=observer.latitude * units.deg,
+                         lon=observer.longitude * units.deg)
 
 
-def horizontal_from_equatorial(right_ascension: float, declination: float,
-                               observer: Observer, jd: float) -> Tuple[float, float]:
-    """``(altitude, azimuth)`` in degrees, azimuth measured east from north."""
-    hour_angle = math.radians(_normalise_degrees(
-        greenwich_sidereal_degrees(jd) + observer.longitude - right_ascension))
-    declination_radians = math.radians(declination)
-    latitude = math.radians(observer.latitude)
+def _coordinate(name: str, jd: float) -> SkyCoord:
+    """A body's geocentric coordinate, whichever engine can produce it.
 
-    sin_altitude = (math.sin(declination_radians) * math.sin(latitude)
-                    + math.cos(declination_radians) * math.cos(latitude)
-                    * math.cos(hour_angle))
-    altitude = math.asin(max(-1.0, min(1.0, sin_altitude)))
-    azimuth = math.atan2(
-        -math.sin(hour_angle) * math.cos(declination_radians),
-        math.sin(declination_radians) * math.cos(latitude)
-        - math.cos(declination_radians) * math.sin(latitude) * math.cos(hour_angle),
+    astropy for anything its builtin ephemeris knows; for the minor planets, the
+    Keplerian solution is wrapped as a heliocentric ecliptic coordinate and
+    handed to astropy to transform. GCRS, not ICRS: ICRS is barycentric, and
+    Earth's one-au offset is a 22 degree parallax on a body as close as Ceres.
+    """
+    moment = _time(jd)
+    if name in ASTROPY_BODIES:
+        return get_body(name.lower(), moment)
+    x, y, z = minor_planet_ecliptic(name, jd)
+    helio = SkyCoord(
+        CartesianRepresentation(x * units.AU, y * units.AU, z * units.AU),
+        frame=HeliocentricTrueEcliptic(obstime=moment),
     )
-    return (math.degrees(altitude), _normalise_degrees(math.degrees(azimuth)))
+    return helio.transform_to(GCRS(obstime=moment))
 
 
-def _sky_position(name: str, geocentric: Tuple[float, float, float],
-                  observer: Observer, jd: float,
-                  ecliptic: Optional[Tuple[float, float, float]] = None) -> SkyPosition:
-    x, y, z = ecliptic_to_equatorial(*geocentric)
-    distance = math.sqrt(x * x + y * y + z * z)
-    right_ascension = _normalise_degrees(math.degrees(math.atan2(y, x)))
-    declination = math.degrees(math.asin(z / distance)) if distance else 0.0
-    altitude, azimuth = horizontal_from_equatorial(
-        right_ascension, declination, observer, jd)
-    source = ecliptic or geocentric
-    longitude = _normalise_degrees(math.degrees(math.atan2(source[1], source[0])))
+def _sky_position(name: str, jd: float, observer: Observer,
+                  elongation: float = 0.0) -> SkyPosition:
+    moment = _time(jd)
+    coordinate = _coordinate(name, jd)
+    horizontal = coordinate.transform_to(
+        AltAz(obstime=moment, location=_location(observer)))
+    ecliptic = coordinate.transform_to(GeocentricTrueEcliptic(equinox=moment))
+    try:
+        distance = float(coordinate.distance.to(units.AU).value)
+    except Exception:  # noqa: BLE001 - a directionless coordinate has no distance
+        distance = 0.0
     return SkyPosition(
         name=name,
-        right_ascension=right_ascension,
-        declination=declination,
-        altitude=altitude,
-        azimuth=azimuth,
+        right_ascension=float(coordinate.ra.deg),
+        declination=float(coordinate.dec.deg),
+        altitude=float(horizontal.alt.deg),
+        azimuth=float(horizontal.az.deg),
         distance=distance,
-        ecliptic_longitude=longitude,
+        ecliptic_longitude=float(ecliptic.lon.deg),
+        elongation=elongation,
     )
 
 
 def sun_position(observer: Observer, jd: float) -> SkyPosition:
-    """The sun, as the reflection of Earth's heliocentric position."""
-    earth = heliocentric_ecliptic("EARTH", jd)
-    geocentric = (-earth[0], -earth[1], -earth[2])
-    return _sky_position("SUN", geocentric, observer, jd)
+    return _sky_position("SUN", jd, observer)
 
 
 def planet_positions(observer: Observer, jd: float,
-                     names: Optional[Tuple[str, ...]] = None) -> List[SkyPosition]:
-    """Geocentric positions for the planets, with solar elongation filled in.
+                     names: Optional[Sequence[str]] = None) -> List[SkyPosition]:
+    """Geocentric positions, with solar elongation filled in.
 
-    Earth is skipped: it has no geocentric position, and the orrery draws it from
-    its heliocentric coordinates instead.
+    Earth is skipped: it has no geocentric position of its own, and the orrery
+    draws it from heliocentric coordinates instead.
     """
-    earth = heliocentric_ecliptic("EARTH", jd)
     sun = sun_position(observer, jd)
     out: List[SkyPosition] = []
     for name in (names or PLANET_ORDER):
         if name == "EARTH":
             continue
-        helio = heliocentric_ecliptic(name, jd)
-        geocentric = (helio[0] - earth[0], helio[1] - earth[1], helio[2] - earth[2])
-        position = _sky_position(name, geocentric, observer, jd, ecliptic=geocentric)
+        position = _sky_position(name, jd, observer)
         separation = abs(((position.ecliptic_longitude - sun.ecliptic_longitude
                            + 180) % 360) - 180)
         out.append(SkyPosition(
@@ -430,6 +423,19 @@ def planet_positions(observer: Observer, jd: float,
     return out
 
 
+def heliocentric_ecliptic(name: str, jd: float) -> Tuple[float, float, float]:
+    """A body's position in au, sun-centred, in ecliptic coordinates."""
+    if name not in ASTROPY_BODIES:
+        return minor_planet_ecliptic(name, jd)
+    moment = _time(jd)
+    helio = get_body(name.lower(), moment).transform_to(
+        HeliocentricTrueEcliptic(obstime=moment))
+    cartesian = helio.cartesian
+    return (float(cartesian.x.to(units.AU).value),
+            float(cartesian.y.to(units.AU).value),
+            float(cartesian.z.to(units.AU).value))
+
+
 def heliocentric_longitudes(
     jd: float,
     names: Optional[Sequence[str]] = None,
@@ -437,9 +443,8 @@ def heliocentric_longitudes(
     """``name -> (longitude degrees, distance au)`` for the orrery's top-down view.
 
     Distance is the projection onto the ecliptic plane, which is what a top-down
-    plot wants. For the steeply inclined minor planets -- Eris is tilted 44
-    degrees -- that is visibly shorter than the true radius, and correctly so:
-    seen from above, an inclined orbit projects to a smaller ellipse.
+    plot wants: seen from above, an inclined orbit projects to a smaller ellipse,
+    and Eris is tilted 44 degrees.
     """
     out: Dict[str, Tuple[float, float]] = {}
     for name in (names or PLANET_ORDER):
@@ -453,7 +458,7 @@ def mean_distance(name: str) -> float:
     """A body's semi-major axis in au, for ordering rings sun-outward."""
     if name in MINOR_PLANET_ELEMENTS:
         return MINOR_PLANET_ELEMENTS[name][1]
-    return PLANET_ELEMENTS[name][0][0]
+    return PLANET_SEMI_MAJOR_AXIS[name]
 
 
 def moon_geocentric_longitude(jd: float) -> float:
@@ -500,75 +505,38 @@ class MoonState:
 
 
 def moon_state(observer: Observer, jd: float) -> MoonState:
-    """The moon's position and phase from a truncated lunar series."""
-    centuries = centuries_since_j2000(jd)
+    """The moon's position, phase and illuminated fraction, from astropy.
 
-    mean_longitude = _normalise_degrees(218.3164477 + 481267.88123421 * centuries)
-    mean_elongation = _normalise_degrees(297.8501921 + 445267.1114034 * centuries)
-    sun_anomaly = _normalise_degrees(357.5291092 + 35999.0502909 * centuries)
-    moon_anomaly = _normalise_degrees(134.9633964 + 477198.8675055 * centuries)
-    argument_of_latitude = _normalise_degrees(93.2720950 + 483202.0175233 * centuries)
+    The phase angle is the sun-moon-earth angle, built from the elongation and
+    the two distances rather than from elongation alone -- the sun is not at
+    infinity, and the difference shows near the quarters. Illumination follows
+    from it directly.
 
-    d = math.radians(mean_elongation)
-    m = math.radians(sun_anomaly)
-    m_prime = math.radians(moon_anomaly)
-    f = math.radians(argument_of_latitude)
+    ``is_waxing`` cannot come from the illuminated fraction, which is symmetric
+    about full; it comes from whether the moon leads the sun in ecliptic
+    longitude.
+    """
+    moment = _time(jd)
+    location = _location(observer)
+    moon = get_body("moon", moment, location)
+    sun = get_body("sun", moment, location)
 
-    longitude = mean_longitude + (
-        6.289 * math.sin(m_prime)
-        + 1.274 * math.sin(2 * d - m_prime)
-        + 0.658 * math.sin(2 * d)
-        + 0.214 * math.sin(2 * m_prime)
-        - 0.186 * math.sin(m)
-        - 0.114 * math.sin(2 * f)
-        + 0.059 * math.sin(2 * d - 2 * m_prime)
-        + 0.057 * math.sin(2 * d - m - m_prime)
-        + 0.053 * math.sin(2 * d + m_prime)
+    elongation = sun.separation(moon)
+    phase_angle = math.atan2(
+        float(sun.distance.to(units.AU).value) * math.sin(elongation.radian),
+        float(moon.distance.to(units.AU).value)
+        - float(sun.distance.to(units.AU).value) * math.cos(elongation.radian),
     )
-    latitude = (
-        5.128 * math.sin(f)
-        + 0.281 * math.sin(m_prime + f)
-        - 0.278 * math.sin(f - m_prime)
-        - 0.173 * math.sin(f - 2 * d)
-        + 0.055 * math.sin(2 * d - m_prime + f)
-        - 0.046 * math.sin(2 * d - m_prime - f)
-        + 0.033 * math.sin(2 * d + f)
-    )
-    distance_km = (385000.56
-                   - 20905.355 * math.cos(m_prime)
-                   - 3699.111 * math.cos(2 * d - m_prime)
-                   - 2955.968 * math.cos(2 * d)
-                   - 569.925 * math.cos(2 * m_prime))
+    illumination = (1.0 + math.cos(phase_angle)) / 2.0
 
-    distance_au = distance_km / ASTRONOMICAL_UNIT_KM
-    longitude_radians = math.radians(_normalise_degrees(longitude))
-    latitude_radians = math.radians(latitude)
-    geocentric = (
-        distance_au * math.cos(latitude_radians) * math.cos(longitude_radians),
-        distance_au * math.cos(latitude_radians) * math.sin(longitude_radians),
-        distance_au * math.sin(latitude_radians),
-    )
-    position = _sky_position("MOON", geocentric, observer, jd, ecliptic=geocentric)
-
-    sun = sun_position(observer, jd)
-    # Phase angle as the moon's elongation from the sun along the ecliptic: 0 at
-    # new, 180 at full. Dividing by 360 puts a whole cycle on 0..1.
-    elongation = _normalise_degrees(
-        position.ecliptic_longitude - sun.ecliptic_longitude)
-    illumination = (1 - math.cos(math.radians(elongation))) / 2
+    position = _sky_position("MOON", jd, observer,
+                             elongation=float(elongation.deg))
+    sun_longitude = _sky_position("SUN", jd, observer).ecliptic_longitude
+    separation = _normalise_degrees(position.ecliptic_longitude - sun_longitude)
 
     return MoonState(
-        position=SkyPosition(
-            name="MOON",
-            right_ascension=position.right_ascension,
-            declination=position.declination,
-            altitude=position.altitude,
-            azimuth=position.azimuth,
-            distance=distance_au,
-            ecliptic_longitude=position.ecliptic_longitude,
-            elongation=abs(((elongation + 180) % 360) - 180),
-        ),
-        phase=elongation / 360.0,
+        position=position,
+        phase=separation / 360.0,
         illumination=illumination,
-        distance_km=distance_km,
+        distance_km=float(moon.distance.to(units.km).value),
     )

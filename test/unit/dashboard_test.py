@@ -7,7 +7,9 @@ parsers, and the ephemeris. The parts that genuinely need a screen -- whether an
 elbow lines up with its bar -- are covered by ``test/captures/dashboard.sh``
 instead, because no assertion available here can answer that.
 
-    python3 test/unit/dashboard_test.py
+Needs astropy and Pillow, the dashboard's own dependencies:
+
+    uv run --with astropy --with pillow python test/unit/dashboard_test.py
 """
 from __future__ import annotations
 
@@ -369,65 +371,174 @@ class EphemerisTest(unittest.TestCase):
                 os.environ["LCARCAT_OBSERVER"] = previous
 
 
-class EphemerisAccuracyTest(unittest.TestCase):
-    """Pin the ephemeris against astropy, when astropy happens to be installed.
+class MinorPlanetTest(unittest.TestCase):
+    """The minor planets are the one body class astropy cannot supply.
 
-    The tests above check self-consistency and agreement with facts about the
-    solar system; this one checks the numbers themselves against a real
-    ephemeris. It is skipped rather than required because astropy takes about
-    four seconds to import -- which is the reason this module does not use it at
-    runtime -- and the dashboard must stay testable without it.
-
-        uv run --with astropy python test/unit/dashboard_test.py
+    Its builtin ephemeris stops at the eight planets; Ceres, Haumea, Makemake
+    and Eris are in no DE kernel at all. They are propagated here from JPL
+    Small-Body Database elements, so they are the part of the ephemeris that can
+    still drift without anything noticing -- hence a regression pin.
     """
 
-    #: Worst angular separation from astropy, arcminutes. Measured, then given a
-    #: little headroom: these are ceilings that should fail if the method
-    #: degrades, not targets to tune toward.
-    TOLERANCE_ARCMINUTES = {
-        "SUN": 2.0,
-        "MERCURY": 5.0, "VENUS": 5.0, "MARS": 5.0, "JUPITER": 8.0,
-        "SATURN": 8.0, "URANUS": 5.0, "NEPTUNE": 5.0,
-        # A truncated lunar series is worth about a degree; see the module docstring.
-        "MOON": 75.0,
+    OBSERVER = ephemeris.Observer("TEST", 40.7128, -74.0060)
+    WHEN = datetime(2026, 9, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+    #: Right ascension and declination in degrees, cross-checked against an
+    #: independent transform of the same elements through astropy's frames, which
+    #: agreed to 0.01 degrees. Loose tolerance: this guards against a broken
+    #: propagation, not against the method's own accuracy.
+    EXPECTED = {
+        "CERES": (102.29, 23.00),
+        "PLUTO": (306.24, -23.69),
+        "HAUMEA": (219.74, 13.82),
+        "MAKEMAKE": (201.26, 19.97),
+        "ERIS": (27.30, 0.01),
     }
 
-    DATES = ("2026-09-11T16:00:00", "2027-03-01T00:00:00", "2025-06-15T06:00:00")
+    def test_positions_match_the_pinned_solution(self):
+        jd = ephemeris.julian_day(self.WHEN)
+        found = {p.name: p for p in ephemeris.planet_positions(
+            self.OBSERVER, jd, ephemeris.MINOR_PLANET_ORDER)}
+        for name, (right_ascension, declination) in self.EXPECTED.items():
+            body = found[name]
+            self.assertAlmostEqual(body.right_ascension, right_ascension, delta=0.5,
+                                   msg="%s right ascension drifted" % name)
+            self.assertAlmostEqual(body.declination, declination, delta=0.5,
+                                   msg="%s declination drifted" % name)
 
-    def test_positions_agree_with_astropy(self):
-        try:
-            import astropy.units as astropy_units
-            from astropy.coordinates import EarthLocation, get_body
-            from astropy.time import Time
-        except ImportError:
-            self.skipTest("astropy is not installed")
+    def test_each_stays_within_its_own_orbit(self):
+        """Distance must lie between perihelion and aphelion, always."""
+        jd = ephemeris.julian_day(self.WHEN)
+        for name in ephemeris.MINOR_PLANET_ORDER:
+            _, semi_major, eccentricity = ephemeris.MINOR_PLANET_ELEMENTS[name][:3]
+            x, y, z = ephemeris.minor_planet_ecliptic(name, jd)
+            radius = math.sqrt(x * x + y * y + z * z)
+            self.assertTrue(
+                semi_major * (1 - eccentricity) <= radius
+                <= semi_major * (1 + eccentricity),
+                "%s at %.3f au is outside its own orbit" % (name, radius))
 
-        observer = ephemeris.Observer("TEST", 40.7128, -74.0060)
-        location = EarthLocation(lat=40.7128 * astropy_units.deg,
-                                 lon=-74.0060 * astropy_units.deg)
+    def test_astropy_refuses_them_so_the_keplerian_path_is_required(self):
+        """Pin the reason this code exists, so nobody deletes it as redundant."""
+        from astropy.coordinates import solar_system_ephemeris
 
-        def separation_degrees(ra1, dec1, ra2, dec2):
-            ra1, dec1, ra2, dec2 = map(math.radians, (ra1, dec1, ra2, dec2))
-            cosine = (math.sin(dec1) * math.sin(dec2)
-                      + math.cos(dec1) * math.cos(dec2) * math.cos(ra1 - ra2))
-            return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+        for name in ephemeris.MINOR_PLANET_ORDER:
+            self.assertNotIn(name.lower(), solar_system_ephemeris.bodies,
+                             "%s is now in astropy's builtin ephemeris; the "
+                             "Keplerian path for it can go" % name)
 
-        for iso in self.DATES:
-            moment = Time(iso)
-            jd = moment.jd
-            bodies = {p.name: p for p in ephemeris.planet_positions(observer, jd)}
-            bodies["SUN"] = ephemeris.sun_position(observer, jd)
-            bodies["MOON"] = ephemeris.moon_state(observer, jd).position
 
-            for name, mine in bodies.items():
-                reference = get_body(name.lower(), moment, location)
-                arcminutes = 60 * separation_degrees(
-                    mine.right_ascension, mine.declination,
-                    reference.ra.deg, reference.dec.deg)
-                self.assertLess(
-                    arcminutes, self.TOLERANCE_ARCMINUTES[name],
-                    "%s at %s is %.2f arcmin from astropy (limit %.1f)"
-                    % (name, iso, arcminutes, self.TOLERANCE_ARCMINUTES[name]))
+class InteractionTest(unittest.TestCase):
+    """The hit map and the mouse decoding, which have no visual surface."""
+
+    def setUp(self):
+        from dashboard.interaction import HitMap
+        self.hits = HitMap()
+        self.fired = []
+
+    def _region(self, rect, name, **kwargs):
+        from dashboard.interaction import on_click
+        self.hits.add(rect, on_click(lambda: self.fired.append(name)), name,
+                      **kwargs)
+
+    def test_later_registration_wins(self):
+        # Rendering nests outermost-first -- frame, panel, widget -- so a
+        # widget's own region must beat the panel chrome beneath it.
+        from dashboard.interaction import Click
+        self._region(Rect(0, 0, 20, 10), "panel")
+        self._region(Rect(5, 5, 4, 2), "widget")
+        self.assertTrue(self.hits.dispatch(Click(6, 6)))
+        self.assertEqual(self.fired, ["widget"])
+
+    def test_click_outside_every_region_is_ignored(self):
+        from dashboard.interaction import Click
+        self._region(Rect(0, 0, 4, 4), "only")
+        self.assertFalse(self.hits.dispatch(Click(99, 99)))
+        self.assertEqual(self.fired, [])
+
+    def test_wheel_reaches_only_regions_that_asked_for_it(self):
+        from dashboard.interaction import Button, Click
+        self._region(Rect(0, 0, 10, 10), "plain")
+        self.assertFalse(self.hits.dispatch(Click(1, 1, Button.WHEEL_UP)))
+        self.hits.clear()
+        self.fired.clear()
+        self._region(Rect(0, 0, 10, 10), "scrolls", wants_wheel=True)
+        self.assertTrue(self.hits.dispatch(Click(1, 1, Button.WHEEL_UP)))
+
+    def test_clear_leaves_nothing_behind(self):
+        # A stale region from a pane that moved or vanished is the failure this
+        # guards: it would make a dead area of the screen still clickable.
+        self._region(Rect(0, 0, 4, 4), "gone")
+        self.hits.clear()
+        from dashboard.interaction import Click
+        self.assertFalse(self.hits.dispatch(Click(1, 1)))
+        self.assertEqual(len(self.hits), 0)
+
+    def test_mouse_decoding(self):
+        import types
+
+        from dashboard.interaction import Button
+        from dashboard.terminal_input import to_click
+
+        def keystroke(name, xy):
+            stroke = types.SimpleNamespace()
+            stroke.name, stroke.mouse_xy = name, xy
+            return stroke
+
+        click = to_click(keystroke("MOUSE_LEFT", (41, 12)))
+        assert click is not None
+        self.assertEqual((click.x, click.y, click.button), (41, 12, Button.LEFT))
+
+        modified = to_click(keystroke("MOUSE_CTRL_LEFT", (5, 5)))
+        assert modified is not None
+        self.assertTrue(modified.ctrl)
+
+        wheel = to_click(keystroke("MOUSE_SCROLL_UP", (1, 1)))
+        assert wheel is not None
+        self.assertIs(wheel.button, Button.WHEEL_UP)
+        self.assertTrue(wheel.is_wheel)
+
+        # Releases and motion must not fire handlers a second time.
+        self.assertIsNone(to_click(keystroke("MOUSE_LEFT_RELEASED", (41, 12))))
+        self.assertIsNone(to_click(keystroke("MOUSE_RIGHT_MOTION", (3, 3))))
+        self.assertIsNone(to_click(keystroke("KEY_ENTER", (-1, -1))))
+
+
+class NavigationTest(unittest.TestCase):
+    """Every layout must offer navigation to every other layout."""
+
+    def test_navigation_rail_covers_all_layouts_and_lights_the_current_one(self):
+        from dashboard import layouts
+
+        for name in layouts.names():
+            layout = layouts.build(name)
+            chosen = []
+            layout.on_navigate = lambda target: chosen.append(target) or True
+            blocks = layout.frame_rail_blocks()
+            labels = {block.label for block in blocks}
+            self.assertEqual(len(blocks), len(layouts.names()),
+                             "%s rail does not list every layout" % name)
+            self.assertIn(name.upper().replace("-", " "), labels)
+
+            # The current layout is lit and inert; every other is clickable.
+            inert = [b for b in blocks if b.action is None]
+            self.assertEqual([b.label for b in inert],
+                             [name.upper().replace("-", " ")])
+            for block in blocks:
+                if block.action is not None:
+                    block.action(None)  # type: ignore[arg-type]
+            self.assertEqual(len(chosen), len(layouts.names()) - 1)
+
+    def test_a_layout_that_overrides_decoration_keeps_navigation(self):
+        # The trap: overriding frame_rail_blocks instead of
+        # decorative_rail_blocks silently removes navigation from that layout.
+        from dashboard import layouts
+
+        for name in layouts.names():
+            layout = layouts.build(name)
+            layout.on_navigate = lambda target: True
+            self.assertTrue(any(b.action for b in layout.frame_rail_blocks()),
+                            "%s has no navigable rail block" % name)
 
 
 class LayoutSmokeTest(unittest.TestCase):

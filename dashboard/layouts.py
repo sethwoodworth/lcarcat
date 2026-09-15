@@ -17,6 +17,7 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 from .geometry import Rect
 from .palette import (GOLD, LILAC, ORANGE, PERIWINKLE, SAGE, SKY, Color)
+from .interaction import Handler, on_click
 from .segments import Chip, ChipStyle, Painter, Panel, PanelStyle, RailBlock
 from .widgets import (JiraWidget, MoonWidget, OrreryKeyWidget, OrreryWidget,
                       PullRequestWidget, SkyWidget, SolWidget, StardateWidget,
@@ -67,6 +68,10 @@ class Layout:
 
     def __init__(self) -> None:
         self.widgets: List[Widget] = []
+        #: Set by the app when the layout is interactive. Taking a callback
+        #: rather than a Dashboard keeps layouts testable and keeps navigation
+        #: from depending on where it happens to be drawn.
+        self.on_navigate: Optional[Callable[[str], bool]] = None
 
     # -- to override -------------------------------------------------------
 
@@ -74,7 +79,22 @@ class Layout:
         raise NotImplementedError
 
     def frame_rail_blocks(self) -> Sequence[RailBlock]:
-        """Blocks stacked down the outer rail. Decorative, in the LCARS tradition."""
+        """Blocks stacked down the outer rail.
+
+        Navigation when the layout is interactive, decoration otherwise. The
+        rail is the most button-like thing LCARS has -- labelled blocks in a
+        column -- so it is where navigation belongs while the outer frame
+        exists. If the frame goes, :meth:`navigation_blocks` moves somewhere
+        else unchanged; nothing about it assumes a rail or a frame.
+        """
+        if self.on_navigate is not None:
+            return self.navigation_blocks()
+        return self.decorative_rail_blocks()
+
+    def decorative_rail_blocks(self) -> Sequence[RailBlock]:
+        """The rail when nothing is navigable. Layouts override THIS, not
+        :meth:`frame_rail_blocks` -- overriding that would quietly drop
+        navigation from the layout that did it."""
         return (
             RailBlock("SENSORS", PERIWINKLE, 2.0),
             RailBlock("COMMS", SKY, 1.4),
@@ -82,6 +102,25 @@ class Layout:
             RailBlock("OPS", LILAC, 1.2),
             RailBlock("LIB", SAGE, 2.4),
         )
+
+    def navigation_blocks(self) -> Sequence[RailBlock]:
+        """One clickable block per layout, the current one lit.
+
+        Colour carries state: the active layout takes the frame's own accent so
+        the rail reads as a set of tabs rather than a list of links.
+        """
+        navigate = self.on_navigate
+        blocks: List[RailBlock] = []
+        for name in names():
+            current = name == self.name
+            blocks.append(RailBlock(
+                label=name.upper().replace("-", " "),
+                color=self.frame_color if current else PERIWINKLE,
+                weight=1.0,
+                action=(None if navigate is None or current
+                        else on_click(lambda chosen=name: navigate(chosen))),
+            ))
+        return tuple(blocks)
 
     def frame_chips(self) -> Sequence[Chip]:
         return (Chip(self.name.upper(), style=ChipStyle.HOLE),)
@@ -195,7 +234,7 @@ class OperationsLayout(Layout):
         self.pull_requests = PullRequestWidget(pill_style=True)
         self.widgets = [self.jira, self.pull_requests]
 
-    def frame_rail_blocks(self) -> Sequence[RailBlock]:
+    def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
             RailBlock("TASKS", GOLD, 2.4),
             RailBlock("REVIEW", LILAC, 2.0),
@@ -239,7 +278,7 @@ class StellarCartographyLayout(Layout):
         self.stardate = StardateWidget()
         self.widgets = [self.orrery, self.sky, self.moon, self.stardate]
 
-    def frame_rail_blocks(self) -> Sequence[RailBlock]:
+    def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
             RailBlock("STELLAR", PERIWINKLE, 2.6),
             RailBlock("CARTO", SKY, 2.0),
@@ -276,7 +315,7 @@ class AstrometricsLayout(Layout):
     """
 
     name = "astrometrics"
-    description = "Facing frames: large orrery left, key/moon/clock right"
+    description = "Facing frames: large orrery left, key/moon/sun right"
     frame_color = PERIWINKLE
 
     def __init__(self) -> None:
@@ -289,7 +328,7 @@ class AstrometricsLayout(Layout):
         self.sol = SolWidget()
         self.widgets = [self.orrery, self.key, self.moon, self.sol]
 
-    def frame_rail_blocks(self) -> Sequence[RailBlock]:
+    def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
             RailBlock("ASTRO", PERIWINKLE, 2.4),
             RailBlock("METRICS", SKY, 1.8),
@@ -354,7 +393,7 @@ class ViewscreenLayout(Layout):
         self.pull_requests = PullRequestWidget(title="PULL REQUESTS")
         self.widgets = [self.stardate, self.sky, self.jira, self.pull_requests]
 
-    def frame_rail_blocks(self) -> Sequence[RailBlock]:
+    def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
             RailBlock("VIEW", PERIWINKLE, 3.0),
             RailBlock("SCAN", SKY, 2.0),
