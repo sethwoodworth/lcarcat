@@ -379,11 +379,12 @@ class MoonWidget(FramedImageWidget):
             if frame.obscuration > 0:
                 # An eclipse in progress is the one thing here worth an alert.
                 chips.append(Chip("ECLIPSE", RED_ALERT, ChipStyle.COLOR))
-            chips.append(Chip("NASA SVS", style=ChipStyle.HOLE))
         elif state is not None:
             chips.append(Chip("%02d-PERCENT" % round(state.illumination * 100),
                               LILAC, ChipStyle.COLOR))
-            chips.append(Chip("COMPUTED", style=ChipStyle.HOLE))
+            # Only worth saying when it is NOT the NASA frame: the fallback is
+            # a computed approximation and the header should admit it.
+            chips.append(Chip("COMPUTED", DIM_VIOLET, ChipStyle.COLOR))
         return WidgetChrome(title=self.title, color=self.color, chips=tuple(chips))
 
     def render(self, painter: Painter, rect: Rect) -> None:

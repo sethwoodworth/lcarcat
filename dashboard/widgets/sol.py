@@ -62,7 +62,7 @@ class SolWidget(FramedImageWidget):
                 chips.append(Chip("STORM", ORANGE, ChipStyle.COLOR))
             else:
                 chips.append(Chip("QUIET", SAGE, ChipStyle.COLOR))
-            chips.append(Chip(conditions.channel_name, style=ChipStyle.HOLE))
+            chips.append(Chip(conditions.channel_name, SKY, ChipStyle.COLOR))
         return WidgetChrome(title=self.title, color=self.color, chips=tuple(chips))
 
     def readouts(self) -> List[Tuple[str, str, Color]]:

@@ -162,6 +162,48 @@ def draw_chip(
     return x + chip.width
 
 
+def chip_gap_before(chip: Chip, previous: Optional[Chip]) -> int:
+    """Black columns between ``previous`` and ``chip``.
+
+    From ``docs/lcars-design.md``: a colored chip is *preceded and followed* by
+    a one-column black gap, and the gaps are explicit black cells rather than
+    bar fill. A hole chip is separated from the colored chip on its left by a
+    black column and a bar-color column -- two columns of separation, of which
+    only the left is black -- so the black part is the same one column and the
+    caller leaves the extra bar column by not drawing over it.
+    """
+    return CHIP_GAP
+
+
+def chip_bar_before(chip: Chip, previous: Optional[Chip]) -> int:
+    """Bar-colored columns between the black gap and ``chip``.
+
+    Only a hole chip has one: it is what makes the hole read as a window onto
+    the bar rather than as a chip whose fill happens to match.
+    """
+    return 1 if (chip.style is ChipStyle.HOLE and previous is not None) else 0
+
+
+def chips_width(chips: Sequence[Chip]) -> int:
+    """Columns a chip group occupies, gaps included.
+
+    A trailing black gap is counted for a group ending in a colored chip,
+    because that chip needs black on its right as much as on its left. A group
+    ending in a hole chip does not: the pre-cap buffer follows it directly.
+    """
+    if not chips:
+        return 0
+    total = 0
+    previous: Optional[Chip] = None
+    for chip in chips:
+        total += chip_gap_before(chip, previous) + chip_bar_before(chip, previous)
+        total += chip.width
+        previous = chip
+    if chips[-1].style is not ChipStyle.HOLE:
+        total += CHIP_GAP
+    return total
+
+
 def draw_chips(
     painter: Painter,
     right_edge: int,
@@ -171,49 +213,62 @@ def draw_chips(
     bar_color: Color,
     left_limit: Optional[int] = None,
 ) -> int:
-    """Lay chips out right-to-left ending at ``right_edge`` (exclusive).
+    """Draw a chip group ending at ``right_edge``, in reading order.
 
-    Returns the leftmost column consumed, so the caller knows where the bar's plain
-    fill has to stop. Chips that would cross ``left_limit`` are dropped whole rather
-    than clipped -- half a label in a colored box reads as a rendering bug, while a
-    missing chip reads as a narrow window.
+    ``chips`` is given LEFT TO RIGHT, as it reads on screen, and the group as a
+    whole is right-aligned against ``right_edge``. An earlier version consumed
+    the sequence right-to-left, which silently reversed every caller's list and
+    put hole chips -- which the design says are always rightmost -- on the left.
 
-    Labels sit on the bar's bottom row, matching the prompt's convention, and a
-    colored chip spans the bar's full height.
+    Returns the leftmost column the group occupies, so the caller knows where
+    the bar's plain fill has to stop. Chips are dropped from the *left* when the
+    group will not fit, keeping the rightmost ones, because those are the ones
+    the eye reaches first and the ones callers put their most specific
+    information in.
     """
     canvas = painter.canvas
     label_row = y + rows - 1
-    column = right_edge
 
-    for index, chip in enumerate(chips):
-        width = chip.width
-        gap_before = 0 if index == 0 else CHIP_GAP
-        # A hole chip is separated from the colored chip on its left by a black
-        # column and a bar-color column; only the black one is drawn explicitly.
-        if index > 0 and chips[index - 1].style is ChipStyle.HOLE:
-            gap_before = CHIP_GAP + 1
+    visible = list(chips)
+    while visible and left_limit is not None \
+            and right_edge - chips_width(visible) < left_limit:
+        # Drop whole chips rather than clipping one: half a label in a colored
+        # box reads as a rendering fault, a missing chip reads as a narrow pane.
+        visible.pop(0)
+    if not visible:
+        return right_edge
 
-        start = column - width - gap_before
-        if left_limit is not None and start < left_limit:
-            break
+    start = right_edge - chips_width(visible)
+    column = start
+    previous: Optional[Chip] = None
 
-        if gap_before:
-            canvas.horizontal_run(column - gap_before, y, gap_before, CANVAS)
-            for row in range(1, rows):
-                canvas.horizontal_run(column - gap_before, y + row, gap_before, CANVAS)
+    for chip in visible:
+        gap = chip_gap_before(chip, previous)
+        bar = chip_bar_before(chip, previous)
+        if gap:
+            for row in range(rows):
+                canvas.horizontal_run(column, y + row, gap, CANVAS)
+        column += gap
+        # The bar-colored column before a hole chip is already bar-colored; it
+        # is skipped rather than painted so a hole over a chip of another color
+        # would still show what is underneath.
+        column += bar
 
-        body_start = column - width - gap_before
         fill, label_color = chip_colors(chip, bar_color)
-
         for row in range(rows):
-            canvas.horizontal_run(body_start, y + row, width, fill)
-        canvas.text(body_start + chip.padding, label_row, chip.label,
+            canvas.horizontal_run(column, y + row, chip.width, fill)
+        canvas.text(column + chip.padding, label_row, chip.label,
                     foreground=label_color)
-        painter.claim(Rect(body_start, y, width, rows), chip.action, chip.label)
+        painter.claim(Rect(column, y, chip.width, rows), chip.action, chip.label)
 
-        column = body_start
+        column += chip.width
+        previous = chip
 
-    return column
+    if visible[-1].style is not ChipStyle.HOLE:
+        for row in range(rows):
+            canvas.horizontal_run(column, y + row, CHIP_GAP, CANVAS)
+
+    return start
 
 
 # --------------------------------------------------------------------------

@@ -428,6 +428,115 @@ class MinorPlanetTest(unittest.TestCase):
                              "Keplerian path for it can go" % name)
 
 
+class ChipLayoutTest(unittest.TestCase):
+    """The gap rules from docs/lcars-design.md, asserted on real cells.
+
+    The bug these pin: only the gaps *between* chips were drawn, so a lone chip
+    had black on neither side and a group had none on its outer edges. And the
+    group was consumed right-to-left, silently reversing every caller's list.
+    """
+
+    BAR = 54
+
+    def _row(self, chips):
+        """Render a bar and return (pattern, text) for its label row.
+
+        Pattern letters: ``.`` black gap, ``-`` bar fill, ``#`` chip fill,
+        ``C`` a cap image cell.
+        """
+        import io
+
+        from dashboard.assets import AssetLibrary, CellSize
+        from dashboard.canvas import Canvas
+        from dashboard.images import ImageTransmitter
+        from dashboard.palette import CANVAS as BLACK
+        from dashboard.palette import PERIWINKLE
+        from dashboard.segments import Bar, End, Painter
+
+        canvas = Canvas(self.BAR, 2)
+        painter = Painter(canvas, AssetLibrary(CellSize(19, 38)),
+                          ImageTransmitter(io.StringIO()))
+        Bar(rect=Rect(0, 0, self.BAR, 2), color=PERIWINKLE, rows=2,
+            left_end=End.FLAT, right_end=End.CAP, chips=chips).draw(painter)
+
+        pattern, text = [], []
+        for x in range(self.BAR):
+            cell = canvas.cell(x, 1)
+            assert cell is not None
+            if cell.image_id is not None:
+                pattern.append("C")
+            elif cell.background == BLACK:
+                pattern.append(".")
+            elif cell.background == PERIWINKLE:
+                pattern.append("-")
+            else:
+                pattern.append("#")
+            text.append(cell.char if cell.char.strip() else " ")
+        return ("".join(pattern), "".join(text))
+
+    def test_a_lone_colored_chip_has_black_on_both_sides(self):
+        from dashboard.segments import Chip
+        from dashboard.palette import SAGE
+
+        pattern, _ = self._row((Chip("15-BODIES", SAGE),))
+        self.assertIn(".###########.", pattern,
+                      "a colored chip must be preceded AND followed by black")
+
+    def test_colored_chips_are_separated_and_bounded_by_black(self):
+        from dashboard.segments import Chip
+        from dashboard.palette import GOLD, ORANGE
+
+        pattern, _ = self._row((Chip("AA", ORANGE), Chip("BB", GOLD)))
+        self.assertIn(".####.####.", pattern,
+                      "every colored chip needs black on both sides")
+
+    def test_chips_are_drawn_in_reading_order(self):
+        from dashboard.segments import Chip
+        from dashboard.palette import GOLD, ORANGE
+
+        _, text = self._row((Chip("FIRST", ORANGE), Chip("SECOND", GOLD)))
+        self.assertLess(text.index("FIRST"), text.index("SECOND"),
+                        "chips must render left to right as written")
+
+    def test_a_hole_chip_goes_last_with_no_trailing_gap(self):
+        from dashboard.segments import Chip, ChipStyle
+        from dashboard.palette import ORANGE
+
+        pattern, text = self._row(
+            (Chip("AA", ORANGE), Chip("HOLE", style=ChipStyle.HOLE)))
+        self.assertLess(text.index("AA"), text.index("HOLE"))
+        # A hole chip is filled with the BAR's colour, so it does not appear as
+        # chip fill in the pattern -- it has to be located by its label. From
+        # the end of that label to the cap there must be no black at all.
+        after_hole = text.index("HOLE") + len("HOLE")
+        tail = pattern[after_hole:pattern.index("C")]
+        self.assertNotIn(".", tail,
+                         "nothing black may follow a hole chip before the cap")
+        self.assertNotIn("#", tail, "a hole chip shows the bar, not a fill")
+
+    def test_two_bar_columns_precede_the_cap(self):
+        from dashboard.segments import Chip
+        from dashboard.palette import SAGE
+
+        pattern, _ = self._row((Chip("X", SAGE),))
+        before_cap = pattern[:pattern.index("C")]
+        self.assertTrue(before_cap.endswith("--"),
+                        "design rule 6: at least two bar-color columns before a cap")
+
+    def test_chips_are_dropped_whole_when_the_bar_is_narrow(self):
+        from dashboard.segments import Chip, chips_width
+        from dashboard.palette import GOLD, ORANGE
+
+        wide = (Chip("A-LONG-ONE", ORANGE), Chip("ANOTHER-LONG", GOLD))
+        self.assertGreater(chips_width(wide), 20)
+        pattern, text = self._row(wide)
+        # Whatever fits, no chip may be half-drawn: every run of chip cells is
+        # the full width of some chip.
+        for chip in wide:
+            if chip.label in text:
+                self.assertIn("." + "#" * chip.width, pattern)
+
+
 class InteractionTest(unittest.TestCase):
     """The hit map and the mouse decoding, which have no visual surface."""
 
