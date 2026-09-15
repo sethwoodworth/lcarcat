@@ -16,6 +16,8 @@ Load only the docs relevant to your task:
 | nvim terminal frame (block_record, frame_renderer, frame_buffer, pty_session, term_input, terminal_win) | `docs/nvim-terminal-frame.md`, `docs/nvim-terminal-research.md` |
 | shell block terminology (block, frame, stem, header, footer, gap, OSC 133) | `docs/terminal-block-terminology.md` |
 | colors or palette | `docs/palette.md` |
+| the LCARS dashboard (segments, widgets, layouts, Jira/GitHub panes) | `docs/dashboard.md` |
+| the kitty tab bar (`tab_bar_style custom`) | `docs/dashboard.md` — "The tab bar" |
 | screenshot tests or evaluating rendering | `docs/testing.md` (what to run), then `docs/test-harness.md` (scenario mechanics) or `docs/test-tools.md` (analysis tools) |
 | evaluating nvim gutter color | `docs/testing.md` — run `test/integration/nvim_eob_gutter.sh` |
 | deploy or file mappings | `docs/deployment.md` |

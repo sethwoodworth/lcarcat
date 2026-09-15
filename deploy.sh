@@ -23,6 +23,10 @@ mappings=(
   "generate/gen_swoops.py        $CONFIG/kitty/lcars/gen_swoops.py"
   "kitty/lcars.conf              $CONFIG/kitty/lcars.conf"
   "kitty/lcarcat.keybindings.conf $CONFIG/kitty/lcarcat.keybindings.conf"
+  # The custom tab bar. kitty resolves tab_bar.py relative to its CONFIG dir, so
+  # this path is load-bearing: lcars.conf sets `tab_bar_style custom`, and if the
+  # file is missing kitty drops the tab bar in every window.
+  "kitty/tab_bar.py              $CONFIG/kitty/tab_bar.py"
   # Swoop end-caps: gen_swoops.py names each PNG for its inputs (kind/orientation/facing/
   # color/cell+pixel size) so variants coexist. This is the periwinkle 19x38px set the
   # prompt references; regenerate + update both lists together if the color/metrics change.
@@ -98,6 +102,26 @@ for m in "${mappings[@]}"; do
   read -r src dest <<<"$m"
   deploy_one "$src" "$dest"
 done
+
+# The dashboard is a Python package rather than a handful of files, so it is
+# copied as a tree. Listing every module above would mean editing this file for
+# each new widget, and a widget missed there would fail at runtime rather than at
+# deploy time. Only source and the launcher are copied — no caches, no bytecode.
+deploy_tree() {
+  local subdir="$1" dest_root="$2" relative
+  [[ -d "$REPO/$subdir" ]] || { printf '  SKIP  %s (missing in repo)\n' "$subdir"; return; }
+  while IFS= read -r file; do
+    relative="${file#$REPO/$subdir/}"
+    deploy_one "$subdir/$relative" "$dest_root/$relative"
+  done < <(find "$REPO/$subdir" \
+             \( -name '__pycache__' -o -name '*.pyc' \) -prune -o \
+             -type f \( -name '*.py' -o -name '*.sh' \) -print | sort)
+}
+
+deploy_tree "dashboard" "$CONFIG/lcarcat/dashboard"
+if (( ! DRY )) && [[ -f "$CONFIG/lcarcat/dashboard/run.sh" ]]; then
+  chmod +x "$CONFIG/lcarcat/dashboard/run.sh"
+fi
 
 cat <<EOF
 

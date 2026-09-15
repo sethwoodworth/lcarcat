@@ -13,6 +13,7 @@ lcarcat/
 │   └── prompt_lcars.zsh        — LCARS swoop prompt (renders on top of the above)
 ├── kitty/
 │   ├── lcars.conf              — kitty color theme + font config
+│   ├── tab_bar.py              — custom LCARS tab bar (tab_bar_style custom)
 │   └── lcarcat.keybindings.conf — keybindings
 ├── nvim/
 │   ├── colors/lcars.lua        — nvim colorscheme
@@ -22,6 +23,12 @@ lcarcat/
 │       ├── statusline.lua      — statusline segments
 │       ├── tabline.lua         — tabline segments
 │       └── palette.lua         — color table (runtime source of truth)
+├── dashboard/                  — LCARS landing page for a kitty pane (see docs/dashboard.md)
+│   ├── canvas.py               — absolutely-positioned cell grid + ANSI serialiser
+│   ├── segments.py             — reusable LCARS pieces: bar, elbow, cap, chip, rail, panel
+│   ├── widgets/                — what fills a panel (jira, pull requests, orrery, sky, …)
+│   ├── sources/                — Jira, GitHub, ephemeris, system telemetry
+│   └── layouts.py              — named arrangements of widgets into panels
 ├── generate/
 │   └── gen_swoops.py           — PNG asset generator (Pillow); deployed to ~/.config/kitty/lcars/
 ├── assets/                     — pre-built PNGs for zsh prompt at 19×38 device px per cell
@@ -98,5 +105,7 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Change what the prompt *knows*, or add a zsh precmd/preexec hook | [`docs/zsh-prompt.md`](zsh-prompt.md) — hook ordering is load-bearing; do not append blindly |
 | Look up nvim API behaviour or plugin capability for the terminal frame | [`docs/nvim-terminal-research.md`](nvim-terminal-research.md) |
 | Write ANSI output into a `modifiable=false` display buffer (baleia) | [`docs/spike-2-baleia-findings.md`](spike-2-baleia-findings.md) |
+| Work on the LCARS dashboard, or reuse its segment library | [`docs/dashboard.md`](dashboard.md) |
+| Change the kitty tab bar | [`docs/dashboard.md`](dashboard.md) — "The tab bar" |
 | Understand why a design decision was made under an epic | [`docs/architecture-decisions.md`](architecture-decisions.md) |
 | Check expected block-demo geometry | [`docs/block_demo/spec.md`](block_demo/spec.md) |

@@ -15,6 +15,10 @@
 test/screenshots/
 .DS_Store
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # adhoc ignores
 kitty-crash-report-2026-08-1600EDT.txt
 lcars-example-holodeck-programming.jpg

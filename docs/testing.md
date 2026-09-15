@@ -124,6 +124,24 @@ cannot silently drift apart.
 
 ---
 
+### test/unit/dashboard_test.py
+
+```bash
+python3 test/unit/dashboard_test.py
+```
+
+Covers the dashboard's pure logic: rectangle splits (every split must fill its
+rect exactly, at every width), column-accurate text measurement and truncation,
+the ANSI serialiser, the Jira parser across all four input shapes it accepts, and
+the ephemeris against facts independent of the implementation — equinox dates,
+the earth-sun distance range, perihelion falling in early January, Kepler's
+equation actually being satisfied, and a new moon being close to the sun.
+
+Plus a smoke test that composes every layout at five terminal sizes, which is the
+cheap way to catch a layout that divides by zero on a narrow window.
+
+---
+
 ## Test hierarchy
 
 Scripts are split into two directories based on whether they have machine-verifiable exit codes.
@@ -162,6 +180,8 @@ These produce PNGs in `test/screenshots/<name>/` but have no programmatic assert
 | Script | What it captures |
 |--------|-----------------|
 | `block_demo.sh` | LCARS block frame styles in a scratch buffer |
+| `dashboard.sh` | The LCARS dashboard, one shot per layout. Uses `--hold`: a dashboard that *exits* cannot be shot honestly — the alternate screen tears the frame down on the way out, and on the normal screen the shell prompt that follows scrolls the outer header bar into scrollback before the capture runs |
+| `tab_bar.sh` | The custom LCARS tab bar at one, two and three tabs. Builds an **isolated** kitty config directory from the repo — a `tab_bar.py` that raises takes the strip down in every window, so it must not be tested by deploying it first |
 | `frame_buffer.sh` | frame_buffer lifecycle: done/live/failed blocks via open_block→append_line→close_block |
 | `cmd_buffer_theme.sh` | Orange gutter in command buffer; periwinkle above |
 | `prompt_elbow_alignment.sh` | Elbow image aligned with stem bg cell |
