@@ -40,6 +40,16 @@ _BUTTONS = (
 )
 
 
+def is_mouse(keystroke) -> bool:
+    """Whether a keystroke is a mouse report.
+
+    By ``name``, because blessed's DEC-mode path builds mouse keystrokes with no
+    keycode: ``Keystroke.code`` is ``None`` for them, so comparing against
+    ``Terminal.KEY_MOUSE`` never matches even though the constant exists.
+    """
+    return (getattr(keystroke, "name", "") or "").upper().startswith("MOUSE")
+
+
 def to_click(keystroke) -> Optional[Click]:
     """Convert a mouse :class:`~blessed.keyboard.Keystroke` into a :class:`Click`.
 
@@ -161,8 +171,12 @@ class TerminalInput:
     def poll(self, timeout: float):
         """``(key, click)`` -- whichever arrived first, or ``(None, None)``.
 
-        A keystroke comes back as blessed's ``Keystroke``, which compares equal
-        to the character it represents and carries ``.code`` for named keys.
+        Mouse events are recognised by ``name``, not by ``code``. blessed builds
+        them through its DEC-mode path, which constructs the keystroke without a
+        keycode at all -- ``code`` is ``None`` and never equals ``KEY_MOUSE``,
+        despite that constant existing. Testing ``code`` silently routes every
+        click into the keyboard handler, which is a dead-click bug that looks
+        exactly like the region map being wrong.
         """
         terminal = self.terminal
         if terminal is None:
@@ -170,6 +184,8 @@ class TerminalInput:
         key = terminal.inkey(timeout=max(0.0, timeout))
         if not key:
             return (None, None)
-        if key.code == terminal.KEY_MOUSE:
+        if is_mouse(key):
+            # to_click returns None for releases and motion; swallow those
+            # rather than letting them fall through as keystrokes.
             return (None, to_click(key))
         return (key, None)

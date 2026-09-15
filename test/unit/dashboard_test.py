@@ -474,6 +474,47 @@ class InteractionTest(unittest.TestCase):
         self.assertFalse(self.hits.dispatch(Click(1, 1)))
         self.assertEqual(len(self.hits), 0)
 
+    def test_real_escape_sequences_are_recognised_as_mouse(self):
+        """Drive blessed's own parser, not a stand-in.
+
+        The bug this exists for: mouse keystrokes are built through blessed's
+        DEC-mode path, which supplies no keycode, so ``Keystroke.code`` is None
+        and never equals ``Terminal.KEY_MOUSE`` -- despite that constant
+        existing and looking like the obvious thing to test. Keying off it made
+        every click dead while the region map was provably fine, because the
+        clicks never reached it.
+        """
+        import blessed.keyboard as keyboard
+        from blessed.dec_modes import DecPrivateMode
+
+        from dashboard.interaction import Button
+        from dashboard.terminal_input import is_mouse, to_click
+
+        enabled = {int(DecPrivateMode.MOUSE_EXTENDED_SGR): 1,
+                   int(DecPrivateMode.MOUSE_REPORT_CLICK): 1}
+
+        def parse(sequence):
+            return keyboard._match_dec_event(sequence, dec_mode_cache=enabled)
+
+        press = parse("\x1b[<0;42;13M")
+        self.assertTrue(is_mouse(press))
+        self.assertIsNone(press.code, "if blessed starts setting a keycode, "
+                                      "is_mouse can be simplified")
+        click = to_click(press)
+        assert click is not None
+        self.assertEqual((click.x, click.y, click.button), (41, 12, Button.LEFT))
+
+        # Releases are mouse events but must not produce a second click.
+        release = parse("\x1b[<0;42;13m")
+        self.assertTrue(is_mouse(release))
+        self.assertIsNone(to_click(release))
+
+        wheel = to_click(parse("\x1b[<64;5;5M"))
+        assert wheel is not None
+        self.assertIs(wheel.button, Button.WHEEL_UP)
+
+        self.assertFalse(is_mouse("q"), "a plain keypress is not a mouse event")
+
     def test_mouse_decoding(self):
         import types
 
