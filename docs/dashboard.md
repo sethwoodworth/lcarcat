@@ -113,6 +113,13 @@ columns precede every cap.
 | `draw_sparkline` | one row of block glyphs tracking a series | cells |
 | `draw_pill` | a segment capped at both ends; optionally a button | cells + 2 images |
 
+Chip gaps follow `docs/lcars-design.md`: a colored chip carries a black column
+on **both** sides, a hole chip goes rightmost with `[1 black][1 bar]` before it
+and nothing after, and two bar-color columns always precede a cap. `chips_width`
+and `draw_chips` share that arithmetic, so the size a group reserves and the
+size it draws cannot drift apart. Chips are given in reading order, left to
+right, and the group is right-aligned as a whole.
+
 `Panel` is the unit a widget actually meets. It paints the chrome and hands back
 the rectangle to draw inside, so no widget computes a chrome offset. Styles:
 

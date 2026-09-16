@@ -74,6 +74,22 @@ A frame always changes thickness at each turn. Never the same thickness on two c
 ### 3. The swoop is sacred
 The LCARS elbow shape is identity-defining. Do not distort, flatten, or deform it. Large-radius outer corner; perpendicular inner corner.
 
+**The radius is currently wrong and is being worked out — see `lcarcat-2cc.7`.**
+`gen_swoops.py` derives the outer and inner radii independently, which puts the
+two arc centres 235px apart and the outer radius at 0.45× the bar thickness.
+Two facts are settled:
+
+- The arcs **cannot be concentric.** Two arcs tangent to their own edges share a
+  centre only when both arms have equal width, which rule 2 forbids. What they
+  can share is a *height*: for a top-left elbow both centres sit at `y = R_outer`,
+  differing horizontally by `stem_width − bar_thickness`.
+- **`R_outer` must exceed the bar thickness**, or the inner radius is negative
+  and the corner is not constructible. At 0.45× it computes to −167px.
+
+The ratio itself is unmeasured. Three automated attempts to extract it from the
+reference props all failed; the bead records what went wrong so the next attempt
+starts somewhere new.
+
 ### 4. No T/+ junctions
 **This is the design law.** Bars meet stems only via 2-sided elbows. Free ends get caps. T (3-way) and + (4-way) junctions do not exist in LCARS. Where a stem would cross a bar, one must terminate in a cap or turn in an elbow.
 
