@@ -14,6 +14,12 @@ dashboard/run.sh --list-layouts
 Bound to `ctrl+a>d` (and `ctrl+a>shift+d` for the ambient layout) in
 `kitty/lcarcat.keybindings.conf`.
 
+**Dependencies** — `run.sh` supplies all three through `uv`, so nothing needs
+installing: **Pillow** draws the curve PNGs and scales fetched images,
+**astropy** supplies the ephemeris, **blessed** handles terminal modes and mouse
+decoding. Running `python -m dashboard.app` directly works only if all three
+happen to be importable.
+
 ---
 
 ## Layers

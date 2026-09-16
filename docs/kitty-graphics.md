@@ -6,13 +6,33 @@ Technical reference for the LCARS chrome that uses the kitty graphics protocol �
 
 ## Z-order: images vs. terminal cells
 
-Kitty renders placed images **above** terminal cells in the compositor:
+By **default** kitty composites placed images above terminal cells:
 
 1. nvim renders all cells (SGR background colors, highlight groups, extmark virt_text) to the terminal layer.
 2. Kitty images are composited on top. Opaque image pixels cover the cell content; transparent pixels reveal the cell bg/fg beneath them.
 
-There is no `z_index` parameter for windowless image.nvim placements. Render order is strictly:
-**cells (including all extmarks and virt_text) → placed images.**
+**This is a default, not a protocol limit.** The graphics protocol has a `z` key
+(kitty's `graphics-protocol.html`, "you can specify the image z-index"):
+
+| `z` | effect |
+|-----|--------|
+| `>= 0` | drawn **above** the text — the default |
+| `< 0` | drawn **under** the text |
+| `< -1073741824` | drawn under cells with non-default background colors too |
+
+What *is* limited is **image.nvim**: it exposes no z-index for windowless
+placements, so inside nvim the order really is cells → images. That is a library
+constraint and does not generalize to kitty. (This document previously stated the
+strict ordering as a property of kitty; it was conflating the two.)
+
+A separate constraint does survive the correction, and it is the one that bites
+when trying to put text over an image: **a Unicode-placeholder cell's content
+*is* the placeholder codepoint**. Text and image compete for the same cell no
+matter what `z` says — writing a character there removes that cell from the
+placement and punches a hole. Getting text over an image therefore requires a
+classic cursor-anchored placement with negative `z`, not placeholders. Classic
+placements do not reflow on resize, which is the "dangling elbow" problem
+described under *Cursor-anchored vs windowless placement* below.
 
 **Practical consequences for LCARS block frames:**
 
@@ -82,7 +102,15 @@ Reject anything that doesn't match — a mixed-in keystroke can poison the parse
 
 ## Unicode placeholder protocol
 
-Each image is transmitted once with a fixed id and a virtual placement (`U=1`) sized in cells (`c×r`). Placeholder cells hold `U+10EEEE` plus row/column combining diacritics (kitty's fixed table: `U+0305 U+030D U+030E U+0310 U+0312`). The image id rides the cell's foreground color (`\e[38;5;<id>m`), so ids must stay < 256.
+Each image is transmitted once with a fixed id and a virtual placement (`U=1`) sized in cells (`c×r`). Placeholder cells hold `U+10EEEE` plus row/column combining diacritics. The image id rides the cell's foreground color (`\e[38;5;<id>m`), so ids must stay < 256.
+
+**The diacritic table has 297 entries, not five.** The zsh prompt hardcodes only
+`U+0305 U+030D U+030E U+0310 U+0312` because its widest image is a 5-column elbow
+— that is a convenience, not the limit. The full table is what caps an image at
+297 cells in either direction. kitty ships it at
+`doc/kitty/html/_downloads/*/rowcolumn-diacritics.txt`; the path contains a
+content hash that changes between releases, so transcribe it rather than reading
+it at runtime. `dashboard/diacritics.py` is a transcription.
 
 ### Transmission
 
@@ -97,6 +125,12 @@ That does **not** retire the atomic-write fix in `deploy.sh` and `gen_swoops.py`
 ```zsh
 printf '\e_Ga=T,U=1,i=%d,f=100,t=d,c=%d,r=%d,q=2;%s\e\\' "$id" "$cols" "$rows" "$base64data"
 ```
+
+**Re-transmitting under the same id replaces the image.** A plot whose data
+changes has no stable filename to cache by, so the dashboard keys such images by
+a caller-chosen name, digests the PNG bytes, and re-sends only when they differ
+— the placeholder cells already on screen then show the new picture without
+being rewritten. See `ImageTransmitter.dynamic_transmission`.
 
 **Chunking.** kitty caps a graphics escape at 4096 bytes of base64 payload. Larger images must be split: control data rides the *first* escape with `m=1`, continuations carry only `m=1`, and the final escape carries `m=0`.
 

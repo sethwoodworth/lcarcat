@@ -47,10 +47,30 @@ Drives a detached kitty instance via `kitty @ --to SOCK` remote control. Capture
 
 ### When `snapshot` fails: `could not create image from window`
 
-That message is from macOS `screencapture`: the terminal hosting the test run
-lacks **Screen Recording** permission (System Settings → Privacy & Security →
-Screen Recording). It is not a harness or kitty bug, and it affects every
-capture, including a bare `screenshot_harness.sh snapshot`.
+That message is from macOS `screencapture`, and it has **two** causes worth
+telling apart before chasing the wrong one.
+
+**Permanent — missing permission.** The terminal hosting the test run lacks
+**Screen Recording** permission (System Settings → Privacy & Security → Screen
+Recording). Every capture fails, including a bare
+`screenshot_harness.sh snapshot`, and it keeps failing until the permission is
+granted. Not a harness or kitty bug.
+
+**Transient — a stale window id.** Captures succeed, then start failing, then
+succeed again with no permission change. `snapshot` resolves the CGWindowID from
+`kitty @ ls`; if a previous run's kitty is still around, or the window has been
+torn down between the lookup and the capture, `screencapture -l<id>` is handed an
+id that no longer names a window. The fix is a full teardown before retrying:
+
+```bash
+bash test/screenshot_harness.sh teardown
+sleep 2
+bash test/captures/<scenario>.sh
+```
+
+Observed repeatedly on 2026-09-14/16 while shooting the dashboard: a run failed
+twice consecutively, then succeeded on the first attempt after a teardown. If
+the permission were missing, the retry would have failed too.
 
 It matters more than it looks: scenario scripts run under `set -euo pipefail`,
 so a failed snapshot aborts the whole run before the assertions execute. Run

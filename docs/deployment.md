@@ -13,6 +13,23 @@ Run from the repo root:
 
 Destinations are hardcoded for `$XDG_CONFIG_HOME` (defaults `~/.config`). See `ROADMAP.md` → "Packaging" for the plan to make them configurable.
 
+## Two kinds of mapping
+
+Most entries are one line per file. The **dashboard is copied as a tree**
+instead, by `deploy_tree`: listing every module would mean editing `deploy.sh`
+for each new widget, and a widget missed there fails at runtime rather than at
+deploy time. Only `.py` and `.sh` are copied — no caches, no bytecode.
+
+`kitty/tab_bar.py`'s destination is load-bearing. kitty resolves `tab_bar.py`
+relative to its **config directory**, and `lcars.conf` sets
+`tab_bar_style custom`; if the file is missing or raises, kitty drops the tab bar
+in every window at once. Recovery is one line — set `tab_bar_style powerline` in
+`~/.config/kitty/lcars.conf` and reload with `ctrl+a>f`; the original title
+templates are still there, commented, directly below it.
+
+A running kitty also **caches the tab_bar module**, so `ctrl+a>f` does not pick
+up a changed `tab_bar.py` — kitty has to be restarted.
+
 ## File mappings
 
 | Repo path | Deployed to |
@@ -22,6 +39,8 @@ Destinations are hardcoded for `$XDG_CONFIG_HOME` (defaults `~/.config`). See `R
 | `generate/gen_swoops.py` | `~/.config/kitty/lcars/gen_swoops.py` |
 | `kitty/lcars.conf` | `~/.config/kitty/lcars.conf` |
 | `kitty/lcarcat.keybindings.conf` | `~/.config/kitty/lcarcat.keybindings.conf` |
+| `kitty/tab_bar.py` | `~/.config/kitty/tab_bar.py` |
+| `dashboard/**` *(tree)* | `~/.config/lcarcat/dashboard/**` |
 | `assets/elbow-top-left-9999ff-5x3cells-19x38pixels.png` | `~/.config/kitty/lcars/` |
 | `assets/elbow-bottom-left-9999ff-5x3cells-19x38pixels.png` | `~/.config/kitty/lcars/` |
 | `assets/elbow-top-right-9999ff-5x3cells-19x38pixels.png` | `~/.config/kitty/lcars/` |

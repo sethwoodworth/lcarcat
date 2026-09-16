@@ -17,7 +17,8 @@ Load only the docs relevant to your task:
 | shell block terminology (block, frame, stem, header, footer, gap, OSC 133) | `docs/terminal-block-terminology.md` |
 | colors or palette | `docs/palette.md` |
 | the LCARS dashboard (segments, widgets, layouts, Jira/GitHub panes) | `docs/dashboard.md` |
-| the kitty tab bar (`tab_bar_style custom`) | `docs/dashboard.md` — "The tab bar" |
+| the kitty tab bar (`tab_bar_style custom`) | `docs/dashboard.md` — "The tab bar", then `docs/deployment.md` for the revert path |
+| clickable regions, mouse input, terminal modes | `docs/dashboard.md` — "Interaction" |
 | screenshot tests or evaluating rendering | `docs/testing.md` (what to run), then `docs/test-harness.md` (scenario mechanics) or `docs/test-tools.md` (analysis tools) |
 | evaluating nvim gutter color | `docs/testing.md` — run `test/integration/nvim_eob_gutter.sh` |
 | deploy or file mappings | `docs/deployment.md` |
