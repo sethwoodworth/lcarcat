@@ -41,6 +41,14 @@ and described the zsh prompt's chips as the contents of the kitty tab bar. Both
 took one command to settle from the pixels. Cross-check any structural claim —
 and see `docs/elbow-measurement.md` for the same rule stated for reference props.
 
+One trap has now cost two round trips, so it is worth naming: **a round cap is
+solid colour through the middle of its bar.** Sample a header bar at its centre
+row and the cap is indistinguishable from the bar fill beside it, so "is there a
+pre-cap buffer?" and "where does the cap start?" both come back wrong — twice
+reported as a title sitting flush against a cap that in fact had three bar
+columns before it. Measure cap geometry at the bar's TOP or BOTTOM row, where
+the curve leaves partially-filled cells.
+
 **Prefer the semantic check (`get_cell_grid.py`) for programmatic assertions.** It reads kitty's terminal model directly and does not depend on screenshot timing. The pixel check (`analyze_gutter_cells.py`) is useful for visual confirmation and diagnosing rendering bugs downstream of the terminal model, but screenshot timing makes it unreliable as a pass/fail gate — a screenshot taken a few milliseconds before nvim finishes painting will silently show the wrong color.
 
 A pixel check passing with a semantic check failing means the right color reached the screen despite wrong SGR state (possible with compositor caching, but unlikely). Pixel failing with semantic passing is a rendering or anti-aliasing bug, not a logic bug.
