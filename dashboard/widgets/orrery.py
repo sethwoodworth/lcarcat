@@ -99,7 +99,7 @@ class OrreryWidget(Widget):
         return WidgetChrome(
             title=self.title,
             color=self.color,
-            chips=(Chip("HELIOCENTRIC", style=ChipStyle.HOLE),),
+            chips=(Chip("HELIOCENTRIC", style=ChipStyle.COLOR),),
         )
 
     def render(self, painter: Painter, rect: Rect) -> None:
@@ -177,7 +177,7 @@ class SkyWidget(Widget):
         if self.planets:
             up = sum(1 for body in self.planets if body.is_up)
             chips.append(Chip("%02d-ABOVE" % up, SAGE, ChipStyle.COLOR))
-        chips.append(Chip(self.observer.name, style=ChipStyle.HOLE))
+        chips.append(Chip(self.observer.name, style=ChipStyle.COLOR))
         return WidgetChrome(title=self.title, color=self.color, chips=tuple(chips))
 
     def render(self, painter: Painter, rect: Rect) -> None:

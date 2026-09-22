@@ -16,6 +16,7 @@ it. That is why the cell size is probed rather than assumed.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
 import select
@@ -30,6 +31,7 @@ from .palette import Color, to_hex
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GENERATOR = REPO_ROOT / "generate" / "gen_swoops.py"
+TEXT_GENERATOR = REPO_ROOT / "generate" / "gen_block_text.py"
 
 CACHE_DIR = Path(
     os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
@@ -111,18 +113,30 @@ def probe_cell_size(timeout: float = 0.4) -> CellSize:
     return CellSize(FALLBACK_CELL_WIDTH, FALLBACK_CELL_HEIGHT)
 
 
-def _load_generator():
-    """Import gen_swoops.py by path -- it lives outside any package."""
-    spec = importlib.util.spec_from_file_location("lcarcat_gen_swoops", GENERATOR)
+def _load_by_path(name: str, path: Path):
+    """Import a generator script by path -- they live outside any package."""
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise ImportError("cannot load the PNG generator at %s" % GENERATOR)
+        raise ImportError("cannot load the PNG generator at %s" % path)
     module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault("lcarcat_gen_swoops", module)
+    sys.modules.setdefault(name, module)
     spec.loader.exec_module(module)
     return module
 
 
+def _load_generator():
+    return _load_by_path("lcarcat_gen_swoops", GENERATOR)
+
+
+def text_generator():
+    global _text_generator
+    if _text_generator is None:
+        _text_generator = _load_by_path("lcarcat_gen_block_text", TEXT_GENERATOR)
+    return _text_generator
+
+
 _generator = None
+_text_generator = None
 
 
 def generator():
@@ -215,6 +229,53 @@ class AssetLibrary:
             )
 
         return self._cached(name, columns, rows, draw)
+
+    def block_text(
+        self,
+        text: str,
+        color: Color,
+        label_color: Color,
+        rows: int = 2,
+        font: Optional[str] = None,
+    ) -> Asset:
+        """A bar-height label: the text knocked out of the bar colour, as a PNG.
+
+        Terminal cells cannot set type taller than one cell, so a label that has
+        to fill the bar is an image -- the same exception the elbow and cap are.
+        The returned asset knows how many columns it needs; the caller places it
+        like any other image and keeps the cells beneath it black.
+        """
+        text = text.upper()
+        blocks = text_generator()
+        columns, _ = blocks.measure(
+            text, rows, self.cell_size.width, self.cell_size.height, font
+        )
+        # The text itself is part of the identity, and can be long or carry
+        # characters a filename should not, so it travels as a digest.
+        digest = hashlib.sha1(
+            ("%s|%s|%s" % (text, font or "", blocks.CAP_HEIGHT_RATIO)).encode()
+        ).hexdigest()[:10]
+        name = "blocktext-%s-%s-on-%s-%dx%dcells-%dx%dpixels.png" % (
+            digest, to_hex(label_color), to_hex(color), columns, rows,
+            self.cell_size.width, self.cell_size.height,
+        )
+
+        def draw(path: Path) -> None:
+            blocks.render(
+                str(path), text,
+                blocks.hex_rgba(to_hex(color)), blocks.hex_rgba(to_hex(label_color)),
+                rows, self.cell_size.width, self.cell_size.height,
+                columns=columns, font_path=font,
+            )
+
+        return self._cached(name, columns, rows, draw)
+
+    def block_text_columns(self, text: str, rows: int = 2, font: Optional[str] = None) -> int:
+        """How wide a label will be, before deciding whether it fits."""
+        columns, _ = text_generator().measure(
+            text.upper(), rows, self.cell_size.width, self.cell_size.height, font
+        )
+        return columns
 
     def cap_columns(self, rows: int = 2) -> int:
         """How wide a cap of ``rows`` height will be, without generating it.

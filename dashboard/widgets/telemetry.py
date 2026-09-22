@@ -69,7 +69,7 @@ class TelemetryWidget(Widget):
                 chips.append(Chip("CAUTION", GOLD, ChipStyle.COLOR))
             else:
                 chips.append(Chip("NOMINAL", SAGE, ChipStyle.COLOR))
-            chips.append(Chip(reading.hostname.upper(), style=ChipStyle.HOLE))
+            chips.append(Chip(reading.hostname.upper(), style=ChipStyle.COLOR))
         return WidgetChrome(title=self.title, color=self.color, chips=tuple(chips))
 
     def render(self, painter: Painter, rect: Rect) -> None:

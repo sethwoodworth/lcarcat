@@ -71,7 +71,7 @@ class JiraWidget(Widget):
             blocked = len(queue.blocked)
             if blocked:
                 chips.append(Chip("%02d-BLOCKED" % blocked, RED_ALERT, ChipStyle.COLOR))
-            chips.append(Chip("%02d" % len(queue.items), style=ChipStyle.HOLE))
+            chips.append(Chip("%02d" % len(queue.items), style=ChipStyle.COLOR))
             if not queue.live and queue.cached is not None:
                 chips.insert(0, Chip("CACHED-%s" % queue.cached.age_label(),
                                      SKY, ChipStyle.COLOR))

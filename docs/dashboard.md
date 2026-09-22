@@ -120,11 +120,44 @@ columns precede every cap.
 | `draw_pill` | a segment capped at both ends; optionally a button | cells + 2 images |
 
 Chip gaps follow `docs/lcars-design.md`: a colored chip carries a black column
-on **both** sides, a hole chip goes rightmost with `[1 black][1 bar]` before it
-and nothing after, and two bar-color columns always precede a cap. `chips_width`
-and `draw_chips` share that arithmetic, so the size a group reserves and the
-size it draws cannot drift apart. Chips are given in reading order, left to
-right, and the group is right-aligned as a whole.
+on **both** sides, a label chip takes the cap side with `[1 black][1 bar]`
+before it and nothing after, and two bar-color columns always precede a cap.
+`chips_width` and `draw_chips` share that arithmetic, so the size a group
+reserves and the size it draws cannot drift apart. Chips are given in reading
+order, left to right, and the group is right-aligned as a whole.
+
+## Block-letter titles
+
+A panel's title is a label chip set in bar-height block letters — an image,
+because a cell holds one glyph at the terminal's own font size and this label
+has to be as tall as the bar. It is the third thing in this codebase that earns
+a PNG, after the elbow and the cap.
+
+```
+generate/gen_block_text.py   renders the label: Antonio at weight 700, cap-height
+                             sized, 4x supersampled, exact multiple of the cell box
+AssetLibrary.block_text()    caches it like any other asset (the text travels as
+                             a digest in the filename)
+dashboard/labels.py          shortens it when the bar is narrow
+Bar.title_blocks             draws it instead of a row of cell text
+```
+
+**Colors.** The image is the LCARS void with the bar's own accent as the
+letters, matching a label chip exactly — the same colors, the same slot.
+
+**Placement.** Cap-side: the end away from the elbow, inside the pre-cap
+buffer, with the chip group ending beside it. On a mirrored panel that is the
+*left* end of the bar.
+
+**Fitting.** Roughly two columns per character against one for cell text, so a
+long title on a narrow bar is shortened rather than clipped:
+`PULL REQUESTS` → `PLL RQSTS` → `PR`. Each word keeps its first and last letter,
+so `STATUS` becomes `STTS` and not `STT`; words of three letters or fewer are
+left alone. If even the initials do not fit, the bar falls back to one row of
+cell text.
+
+**Turning it off.** `LCARCAT_BLOCK_TITLES=0` renders every title as cell text —
+which is also what a terminal without the graphics protocol would show.
 
 `Panel` is the unit a widget actually meets. It paints the chrome and hands back
 the rectangle to draw inside, so no widget computes a chrome offset. Styles:

@@ -23,6 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from dashboard.canvas import Canvas, text_width, truncate  # noqa: E402
 from dashboard.diacritics import DIACRITICS, placeholder_cell  # noqa: E402
+from dashboard import labels  # noqa: E402
+from dashboard.palette import CANVAS as CANVAS_COLOR  # noqa: E402
 from dashboard.geometry import Rect  # noqa: E402
 from dashboard.palette import CANVAS, ORANGE, TEXT, from_hex, to_hex  # noqa: E402
 from dashboard.sources import ephemeris, jira  # noqa: E402
@@ -172,6 +174,151 @@ class DiacriticsTest(unittest.TestCase):
     def test_out_of_range_index_is_refused(self):
         with self.assertRaises(ValueError):
             placeholder_cell(0, 297)
+
+
+class LabelLadderTest(unittest.TestCase):
+    """Shortening a block-letter title that will not fit its bar."""
+
+    def test_disemvowel_keeps_the_ends_of_each_word(self):
+        self.assertEqual(labels.disemvowel("PULL REQUESTS"), "PLL RQSTS")
+        self.assertEqual(labels.disemvowel("SYSTEM STATUS"), "SYSTM STTS")
+
+    def test_short_words_are_left_alone(self):
+        # Nothing can come out of SKY that leaves it a word.
+        self.assertEqual(labels.disemvowel("SKY"), "SKY")
+        self.assertEqual(labels.disemvowel("SOL SYSTEM"), "SOL SYSTM")
+
+    def test_initials_of_several_words_and_of_one(self):
+        self.assertEqual(labels.initials("PULL REQUESTS"), "PR")
+        self.assertEqual(labels.initials("CHRONOMETER"), "CHR")
+
+    def test_ladder_is_distinct_and_widest_first(self):
+        rungs = list(labels.ladder("ACTIVE WORK"))
+        self.assertEqual(rungs, ["ACTIVE WORK", "ACTVE WRK", "AW"])
+        self.assertEqual(list(labels.ladder("SKY")), ["SKY"])
+
+    def test_fit_takes_the_widest_that_fits(self):
+        width = len
+        self.assertEqual(labels.fit("PULL REQUESTS", width, 40), "PULL REQUESTS")
+        self.assertEqual(labels.fit("PULL REQUESTS", width, 10), "PLL RQSTS")
+        self.assertEqual(labels.fit("PULL REQUESTS", width, 5), "PR")
+
+    def test_fit_gives_up_rather_than_clipping(self):
+        # Callers fall back to cell text; a clipped block label reads as a fault.
+        self.assertIsNone(labels.fit("PULL REQUESTS", len, 1))
+
+
+class ChipSideTest(unittest.TestCase):
+    """Chips pack against the cap side, and shed from the elbow side."""
+
+    WIDTH = 46
+
+    def _pattern(self, left_end, right_end, chips):
+        import io
+
+        from dashboard.assets import AssetLibrary, CellSize
+        from dashboard.canvas import Canvas
+        from dashboard.images import ImageTransmitter
+        from dashboard.palette import CANVAS as BLACK
+        from dashboard.palette import PERIWINKLE
+        from dashboard.segments import Bar, Painter
+
+        canvas = Canvas(self.WIDTH, 2)
+        painter = Painter(canvas, AssetLibrary(CellSize(19, 38)),
+                          ImageTransmitter(io.StringIO()), images_enabled=False)
+        Bar(rect=Rect(0, 0, self.WIDTH, 2), color=PERIWINKLE, rows=2,
+            left_end=left_end, right_end=right_end, chips=chips).draw(painter)
+        text = "".join(
+            (cell.char if (cell := canvas.cell(x, 1)) is not None else " ")
+            for x in range(self.WIDTH)
+        )
+        return text
+
+    def test_a_left_elbow_bar_packs_its_chips_right(self):
+        from dashboard.segments import Chip, End
+        from dashboard.palette import GOLD
+
+        text = self._pattern(End.ELBOW, End.CAP, (Chip("AA", GOLD),))
+        self.assertGreater(text.index("AA"), self.WIDTH // 2)
+
+    def test_a_right_elbow_bar_packs_its_chips_left(self):
+        from dashboard.segments import Chip, End
+        from dashboard.palette import GOLD
+
+        text = self._pattern(End.CAP, End.ELBOW, (Chip("AA", GOLD),))
+        self.assertLess(text.index("AA"), self.WIDTH // 2)
+
+    def test_chips_are_shed_from_the_elbow_side(self):
+        from dashboard.segments import Chip, End
+        from dashboard.palette import GOLD, ORANGE
+
+        many = tuple(Chip("%02d-CHIP" % index, GOLD if index % 2 else ORANGE)
+                     for index in range(6))
+        # Left elbow: the cap is on the right, so the last chips survive.
+        text = self._pattern(End.ELBOW, End.CAP, many)
+        self.assertIn("05-CHIP", text)
+        self.assertNotIn("00-CHIP", text)
+        # Mirrored: the cap is on the left, so the first chips survive instead.
+        text = self._pattern(End.CAP, End.ELBOW, many)
+        self.assertIn("00-CHIP", text)
+        self.assertNotIn("05-CHIP", text)
+
+
+class BlockTitlePlacementTest(unittest.TestCase):
+    """Where a block-letter title lands in its bar.
+
+    The label sits at the end AWAY from the elbow, because the elbow is where
+    the bar turns into the rest of the frame. So it follows the cap: right on a
+    normal bar, left on a mirrored one.
+    """
+
+    WIDTH = 60
+
+    def bar_cells(self, left_end, right_end, title="SOL SYSTEM", chips=()):
+        import io
+
+        from dashboard.assets import AssetLibrary, CellSize
+        from dashboard.canvas import Canvas
+        from dashboard.images import ImageTransmitter
+        from dashboard.segments import Bar, Painter
+        from dashboard.palette import PERIWINKLE
+
+        canvas = Canvas(self.WIDTH, 2)
+        assets = AssetLibrary(CellSize(19, 38))
+        painter = Painter(canvas, assets, ImageTransmitter(io.StringIO()))
+        label_id = painter.images.image_id(
+            assets.block_text(title, CANVAS_COLOR, PERIWINKLE, rows=2)
+        )
+        Bar(rect=Rect(0, 0, self.WIDTH, 2), color=PERIWINKLE, rows=2,
+            left_end=left_end, right_end=right_end, title=title,
+            title_blocks=True, chips=chips).draw(painter)
+        columns = [x for x in range(self.WIDTH)
+                   if (cell := canvas.cell(x, 0)) is not None and cell.image_id == label_id]
+        return columns
+
+    def test_elbow_left_puts_the_label_at_the_right(self):
+        from dashboard.segments import End
+
+        columns = self.bar_cells(End.ELBOW, End.CAP)
+        self.assertTrue(columns, "no label image was placed")
+        # Two bar columns plus the cap itself sit to the right of the label.
+        self.assertLess(columns[-1], self.WIDTH - 2)
+        self.assertGreater(columns[0], self.WIDTH // 2)
+
+    def test_elbow_right_puts_the_label_at_the_left(self):
+        from dashboard.segments import End
+
+        columns = self.bar_cells(End.CAP, End.ELBOW)
+        self.assertTrue(columns, "no label image was placed")
+        self.assertLess(columns[0], self.WIDTH // 2)
+        # It clears the cap on its own side rather than butting against it.
+        self.assertGreaterEqual(columns[0], 2)
+
+    def test_the_label_is_a_contiguous_run(self):
+        from dashboard.segments import End
+
+        columns = self.bar_cells(End.CAP, End.ELBOW)
+        self.assertEqual(columns, list(range(columns[0], columns[-1] + 1)))
 
 
 class PaletteTest(unittest.TestCase):
@@ -498,21 +645,25 @@ class ChipLayoutTest(unittest.TestCase):
         self.assertLess(text.index("FIRST"), text.index("SECOND"),
                         "chips must render left to right as written")
 
-    def test_a_hole_chip_goes_last_with_no_trailing_gap(self):
+    def test_a_label_chip_goes_last_with_no_trailing_gap(self):
         from dashboard.segments import Chip, ChipStyle
         from dashboard.palette import ORANGE
 
         pattern, text = self._row(
-            (Chip("AA", ORANGE), Chip("HOLE", style=ChipStyle.HOLE)))
-        self.assertLess(text.index("AA"), text.index("HOLE"))
-        # A hole chip is filled with the BAR's colour, so it does not appear as
-        # chip fill in the pattern -- it has to be located by its label. From
-        # the end of that label to the cap there must be no black at all.
-        after_hole = text.index("HOLE") + len("HOLE")
-        tail = pattern[after_hole:pattern.index("C")]
-        self.assertNotIn(".", tail,
-                         "nothing black may follow a hole chip before the cap")
-        self.assertNotIn("#", tail, "a hole chip shows the bar, not a fill")
+            (Chip("AA", ORANGE), Chip("LABEL", style=ChipStyle.LABEL)))
+        self.assertLess(text.index("AA"), text.index("LABEL"))
+        # A label chip is cut INTO the bar: its own cells are black, carrying
+        # accent-coloured text. So it reads as black in the pattern, and what
+        # follows it before the cap is bar fill and nothing else -- no second
+        # black gap, because the chip has already supplied the dark ground.
+        end_of_label = text.index("LABEL") + len("LABEL")
+        tail = pattern[end_of_label:pattern.index("C")]
+        # One black cell -- the chip's own right padding -- then bar fill up to
+        # the cap. No second gap: the chip has already supplied the dark ground.
+        self.assertEqual(tail, "." + "-" * (len(tail) - 1),
+                         "a label chip's padding, then bar fill to the cap")
+        self.assertEqual(pattern[text.index("LABEL")], ".",
+                         "a label chip sits on black")
 
     def test_two_bar_columns_precede_the_cap(self):
         from dashboard.segments import Chip

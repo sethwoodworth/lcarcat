@@ -123,7 +123,7 @@ class Layout:
         return tuple(blocks)
 
     def frame_chips(self) -> Sequence[Chip]:
-        return (Chip(self.name.upper(), style=ChipStyle.HOLE),)
+        return (Chip(self.name.upper(), style=ChipStyle.COLOR),)
 
     # -- shared ------------------------------------------------------------
 
@@ -424,7 +424,8 @@ LAYOUTS: Dict[str, Callable[[], Layout]] = {
     ViewscreenLayout.name: ViewscreenLayout,
 }
 
-DEFAULT_LAYOUT = BridgeLayout.name
+#: Astrometrics is the default: it is the layout Seth keeps open.
+DEFAULT_LAYOUT = AstrometricsLayout.name
 
 
 def build(name: str) -> Layout:

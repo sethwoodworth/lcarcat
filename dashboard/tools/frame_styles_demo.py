@@ -49,7 +49,7 @@ def compose(canvas: Canvas, painter: Painter) -> None:
         facing="left",
         rail_width=8,
         chips=(Chip("01-STANDARD", GOLD, ChipStyle.COLOR),
-               Chip("BRACKET", style=ChipStyle.HOLE)),
+               Chip("BRACKET", style=ChipStyle.COLOR)),
         rail_blocks=(RailBlock("SENSORS", PERIWINKLE, 2.0),
                      RailBlock("COMMS", SKY, 1.4),
                      RailBlock("NAV", GOLD, 1.8),

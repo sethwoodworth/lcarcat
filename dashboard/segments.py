@@ -21,12 +21,15 @@ where a bar terminates, and at least two bar-color columns precede every cap.
 """
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Sequence, Tuple
 
 from .assets import Asset, AssetLibrary
 from .canvas import Canvas, text_width, truncate
+from . import labels
 from .geometry import Rect
 from .images import ImageTransmitter
 from .interaction import Click, Handler, HitMap, on_click
@@ -51,10 +54,16 @@ class Painter:
         assets: AssetLibrary,
         images: ImageTransmitter,
         hits: Optional[HitMap] = None,
+        images_enabled: bool = True,
     ) -> None:
         self.canvas = canvas
         self.assets = assets
         self.images = images
+        #: False when the caller will not emit the transmissions (--no-images,
+        #: or a terminal without the graphics protocol). Placeholder cells are
+        #: black, so anything that has a cell-drawn alternative must use it
+        #: rather than leave a hole where the image would have been.
+        self.images_enabled = images_enabled
         #: Clickable regions claimed during this frame. Anything that draws may
         #: register one; nothing is required to.
         self.hits = hits if hits is not None else HitMap()
@@ -98,15 +107,19 @@ class Painter:
 class ChipStyle(Enum):
     """How a chip sits in its bar.
 
-    ``COLOR``  a solid segment in a different accent, dark label (Style B)
-    ``HOLE``   no fill change, label only -- ambient context that should read but
-               not assert (goes rightmost)
-    ``NOTCH``  a black inset holding bar-colored text (Style A)
+    ``COLOR``  a solid segment in its own accent, with a dark label
+    ``LABEL``  a black inset holding accent-colored text -- the bar's own colour
+               on the LCARS void, cut into the bar rather than printed on it
+
+    ``LABEL`` is for a frame or panel's own title and nothing else -- it is the
+    most assertive thing in a bar, so it takes the CAP SIDE: the end away from
+    the elbow, which is where the bar turns into the rest of the frame. A
+    reading, a count or a state belongs in a ``COLOR`` chip, whatever colour it
+    carries.
     """
 
     COLOR = "color"
-    HOLE = "hole"
-    NOTCH = "notch"
+    LABEL = "label"
 
 
 @dataclass(frozen=True)
@@ -128,13 +141,10 @@ class Chip:
 def chip_colors(chip: Chip, bar_color: Color) -> Tuple[Color, Color]:
     """``(fill, label)`` for a chip sitting in a bar of ``bar_color``.
 
-    A hole chip takes the bar's own color so nothing changes but the text; a notch
-    cuts to black and writes in the bar's color; a color chip fills with its own
-    accent and writes in black.
+    A label chip cuts to black and writes in the bar's colour; a color chip
+    fills with its own accent and writes in black.
     """
-    if chip.style is ChipStyle.HOLE:
-        return (bar_color, chip.label_color or CANVAS)
-    if chip.style is ChipStyle.NOTCH:
+    if chip.style is ChipStyle.LABEL:
         return (CANVAS, chip.label_color or bar_color)
     return (chip.color or bar_color, chip.label_color or CANVAS)
 
@@ -167,9 +177,9 @@ def chip_gap_before(chip: Chip, previous: Optional[Chip]) -> int:
 
     From ``docs/lcars-design.md``: a colored chip is *preceded and followed* by
     a one-column black gap, and the gaps are explicit black cells rather than
-    bar fill. A hole chip is separated from the colored chip on its left by a
-    black column and a bar-color column -- two columns of separation, of which
-    only the left is black -- so the black part is the same one column and the
+    bar fill. A label chip is separated from the chip beside it by a black
+    column and a bar-color column -- two columns of separation, of which only
+    the left is black -- so the black part is the same one column and the
     caller leaves the extra bar column by not drawing over it.
     """
     return CHIP_GAP
@@ -178,10 +188,11 @@ def chip_gap_before(chip: Chip, previous: Optional[Chip]) -> int:
 def chip_bar_before(chip: Chip, previous: Optional[Chip]) -> int:
     """Bar-colored columns between the black gap and ``chip``.
 
-    Only a hole chip has one: it is what makes the hole read as a window onto
-    the bar rather than as a chip whose fill happens to match.
+    Only a label chip has one: two columns separate it from its neighbour, and
+    only the column nearer that neighbour is black. The bar keeps showing
+    through the other one.
     """
-    return 1 if (chip.style is ChipStyle.HOLE and previous is not None) else 0
+    return 1 if (chip.style is ChipStyle.LABEL and previous is not None) else 0
 
 
 def chips_width(chips: Sequence[Chip]) -> int:
@@ -189,7 +200,8 @@ def chips_width(chips: Sequence[Chip]) -> int:
 
     A trailing black gap is counted for a group ending in a colored chip,
     because that chip needs black on its right as much as on its left. A group
-    ending in a hole chip does not: the pre-cap buffer follows it directly.
+    ending in a label chip does not: it is already black, and the pre-cap
+    buffer follows it directly.
     """
     if not chips:
         return 0
@@ -199,46 +211,50 @@ def chips_width(chips: Sequence[Chip]) -> int:
         total += chip_gap_before(chip, previous) + chip_bar_before(chip, previous)
         total += chip.width
         previous = chip
-    if chips[-1].style is not ChipStyle.HOLE:
+    if chips[-1].style is not ChipStyle.LABEL:
         total += CHIP_GAP
     return total
 
 
 def draw_chips(
     painter: Painter,
-    right_edge: int,
     y: int,
     rows: int,
     chips: Sequence[Chip],
     bar_color: Color,
-    left_limit: Optional[int] = None,
-) -> int:
-    """Draw a chip group ending at ``right_edge``, in reading order.
+    span_start: int,
+    span_end: int,
+    cap_side: str = "right",
+) -> Optional[Tuple[int, int]]:
+    """Draw a chip group inside ``[span_start, span_end)``, in reading order.
 
-    ``chips`` is given LEFT TO RIGHT, as it reads on screen, and the group as a
-    whole is right-aligned against ``right_edge``. An earlier version consumed
-    the sequence right-to-left, which silently reversed every caller's list and
-    put hole chips -- which the design says are always rightmost -- on the left.
+    ``chips`` is given LEFT TO RIGHT, as it reads on screen. An earlier version
+    consumed the sequence right-to-left, which silently reversed every caller's
+    list and put label chips -- which belong on the cap side -- at the wrong end.
 
-    Returns the leftmost column the group occupies, so the caller knows where
-    the bar's plain fill has to stop. Chips are dropped from the *left* when the
-    group will not fit, keeping the rightmost ones, because those are the ones
-    the eye reaches first and the ones callers put their most specific
-    information in.
+    The group packs against the **cap side** of the bar, because that is the end
+    away from the elbow, where the bar stops rather than turns. On a mirrored
+    bar, whose cap is on the left, the group packs left.
+
+    Returns the columns the group occupies, or None if nothing fit. Chips are
+    dropped from the ELBOW side when the group will not fit, keeping the ones
+    nearest the cap: those are the ones the eye reaches first, and the ones
+    callers put their most specific information in.
     """
     canvas = painter.canvas
     label_row = y + rows - 1
+    available = max(0, span_end - span_start)
 
     visible = list(chips)
-    while visible and left_limit is not None \
-            and right_edge - chips_width(visible) < left_limit:
+    while visible and chips_width(visible) > available:
         # Drop whole chips rather than clipping one: half a label in a colored
         # box reads as a rendering fault, a missing chip reads as a narrow pane.
-        visible.pop(0)
+        visible.pop(0 if cap_side == "right" else -1)
     if not visible:
-        return right_edge
+        return None
 
-    start = right_edge - chips_width(visible)
+    width = chips_width(visible)
+    start = span_start if cap_side == "left" else span_end - width
     column = start
     previous: Optional[Chip] = None
 
@@ -249,9 +265,9 @@ def draw_chips(
             for row in range(rows):
                 canvas.horizontal_run(column, y + row, gap, CANVAS)
         column += gap
-        # The bar-colored column before a hole chip is already bar-colored; it
-        # is skipped rather than painted so a hole over a chip of another color
-        # would still show what is underneath.
+        # The bar-colored column before a label chip is already bar-colored; it
+        # is skipped rather than painted, so a label chip laid over a segment of
+        # another color would still show what is underneath.
         column += bar
 
         fill, label_color = chip_colors(chip, bar_color)
@@ -264,11 +280,11 @@ def draw_chips(
         column += chip.width
         previous = chip
 
-    if visible[-1].style is not ChipStyle.HOLE:
+    if visible[-1].style is not ChipStyle.LABEL:
         for row in range(rows):
             canvas.horizontal_run(column, y + row, CHIP_GAP, CANVAS)
 
-    return start
+    return (start, start + width)
 
 
 # --------------------------------------------------------------------------
@@ -310,6 +326,10 @@ class Bar:
     chips: Sequence[Chip] = field(default_factory=tuple)
     title: Optional[str] = None
     title_color: Optional[Color] = None
+    #: Draw the title as bar-height block letters (an image) rather than as a
+    #: row of cells. Costs about two columns per character against one, and
+    #: falls back to cell text when the bar has no room for the image.
+    title_blocks: bool = field(default_factory=lambda: BLOCK_TITLES)
 
     def draw(self, painter: Painter) -> Rect:
         canvas = painter.canvas
@@ -354,25 +374,63 @@ class Bar:
         for row in range(self.rows):
             canvas.horizontal_run(flat_start, y + row, flat_end - flat_start, self.color)
 
-        content_end = flat_end
-        if self.right_end is End.CAP:
-            # Design law: at least two bar-color columns before a cap, so the round
-            # end reads as the bar continuing rather than a blob on the last chip.
-            content_end -= PRE_CAP_COLUMNS
+        # The cap side is where the bar STOPS rather than turns, so it is where
+        # the panel's name and its chips belong. The elbow side is a corner, and
+        # anything against it reads as part of that corner.
+        title_on_left = self.right_end is End.ELBOW
+        cap_side = "left" if title_on_left else "right"
+        # Design rule 6, symmetrically: content keeps two bar columns clear of a
+        # cap, on whichever side the cap is.
+        left_bound = flat_start + (PRE_CAP_COLUMNS if self.left_end is End.CAP else 0)
+        right_bound = flat_end - (PRE_CAP_COLUMNS if self.right_end is End.CAP else 0)
+
+        label_span: Optional[Tuple[int, int]] = None
+        if self.title:
+            available = max(0, right_bound - left_bound - 1)
+            if self.title_blocks and self.rows >= 2 and painter.images_enabled:
+                label = labels.fit(
+                    self.title.upper(),
+                    lambda text: painter.assets.block_text_columns(text, rows=self.rows),
+                    available,
+                )
+                if label:
+                    asset = painter.assets.block_text(
+                        label, CANVAS, self.title_color or self.color, rows=self.rows,
+                    )
+                    image_id = painter.register(asset)
+                    start = left_bound if title_on_left else right_bound - asset.columns
+                    canvas.place_image(start, y, image_id, asset.columns, asset.rows)
+                    label_span = (start, start + asset.columns)
+            if label_span is None:
+                # No image, or none that fits: the same label in cells, on the
+                # same side, abbreviated by the same ladder.
+                text = labels.fit(self.title.upper(), text_width, available)
+                if text:
+                    width = text_width(text)
+                    start = left_bound if title_on_left else right_bound - width
+                    canvas.text(start, y + self.rows - 1, text,
+                                foreground=self.title_color or CANVAS)
+                    label_span = (start, start + width)
 
         if self.chips:
-            content_end = draw_chips(
-                painter, content_end, y, self.rows, self.chips, self.color,
-                left_limit=flat_start,
-            )
-
-        if self.title:
-            label = truncate(self.title, max(0, content_end - flat_start - 2))
-            if label:
-                canvas.text(flat_start + 1, y + self.rows - 1, label,
-                            foreground=self.title_color or CANVAS)
+            # One bar column between the title and the chip group; draw_chips
+            # supplies the black gap on the chip's own side.
+            if title_on_left:
+                chip_start = label_span[1] + 1 if label_span else left_bound
+                chip_end = right_bound
+            else:
+                chip_start = left_bound
+                chip_end = label_span[0] - 1 if label_span else right_bound
+            draw_chips(painter, y, self.rows, self.chips, self.color,
+                       span_start=chip_start, span_end=chip_end, cap_side=cap_side)
 
         return Rect(flat_start, y, max(0, flat_end - flat_start), self.rows)
+
+
+#: Bar titles as block letters (lcarcat-6ac). On by default;
+#: ``LCARCAT_BLOCK_TITLES=0`` falls every bar back to one row of cell text,
+#: which is what a terminal without the graphics protocol would show anyway.
+BLOCK_TITLES = os.environ.get("LCARCAT_BLOCK_TITLES", "1") != "0"
 
 
 #: A pill is at least two rows tall. At one row the round caps are a half-cell
@@ -603,6 +661,11 @@ class Panel:
     chips: Sequence[Chip] = field(default_factory=tuple)
     rail_blocks: Sequence[RailBlock] = field(default_factory=tuple)
     content_gap: int = 1
+    #: Set the header title in bar-height block letters, as an image, instead
+    #: of one row of cells. Defaults from LCARCAT_BLOCK_TITLES so a running
+    #: dashboard can be compared both ways without an edit; a title that does
+    #: not fit even abbreviated falls back to cell text.
+    title_blocks: bool = field(default_factory=lambda: BLOCK_TITLES)
 
     @property
     def mirrored(self) -> bool:
@@ -633,6 +696,7 @@ class Panel:
             elbow_columns=max(5, self.rail_width + 2),
             chips=self.chips,
             title=self.title,
+            title_blocks=self.title_blocks,
             left_end=left_end,
             right_end=right_end,
         )

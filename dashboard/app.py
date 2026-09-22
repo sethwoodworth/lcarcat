@@ -98,7 +98,8 @@ class Dashboard:
         canvas = self._ensure_canvas()
         canvas.fill(canvas.rect, background=CANVAS)
         self.hits.clear()
-        painter = Painter(canvas, self.assets, self.images, hits=self.hits)
+        painter = Painter(canvas, self.assets, self.images, hits=self.hits,
+                          images_enabled=self.allow_images)
 
         screen = canvas.rect
         if screen.width < 40 or screen.height < 16:
