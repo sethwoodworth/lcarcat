@@ -27,8 +27,18 @@ in every window at once. Recovery is one line — set `tab_bar_style powerline` 
 `~/.config/kitty/lcars.conf` and reload with `ctrl+a>f`; the original title
 templates are still there, commented, directly below it.
 
-A running kitty also **caches the tab_bar module**, so `ctrl+a>f` does not pick
-up a changed `tab_bar.py` — kitty has to be restarted.
+A running kitty also **caches the tab_bar module**, so a single `ctrl+a>f` does
+not pick up a changed `tab_bar.py`; a second `ctrl+a>f` does (a kitty bug,
+confirmed on 0.48.2). Why: `docs/kitty-tab-bar.md`.
+
+## Generated PNGs after a shape change
+
+`./deploy.sh` copies the checked-in 19×38 assets. It does **not** touch the PNGs
+the prompt and nvim generate at other cell sizes, and their filenames do not
+encode the shape — so a geometry change in `gen_swoops.py` would keep rendering
+the old corner at every other font size. Use `./deploy.sh --prune-assets` to
+delete those and the nvim/dashboard caches, so each regenerates on next use.
+Details: `docs/asset-pipeline.md`.
 
 ## File mappings
 

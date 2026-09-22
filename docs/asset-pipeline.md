@@ -114,6 +114,25 @@ uv run --with pillow $_LCARS_GEN_PY \
 
 This is cheap when assets already exist. It only runs `gen_swoops.py` on a cache miss.
 
+> **A geometry change does not invalidate anything.** Asset filenames encode the
+> kind, colour, cell count and cell pixel size — never the corner radii. So after
+> editing a shape in `gen_swoops.py` (say the elbow radius constants), every
+> cached PNG still *looks* current to the existence check above, and the prompt,
+> nvim and the dashboard all go on using the old drawing. Regenerating the repo's
+> `assets/` fixes only the checked-in 19×38 set. To push a shape change
+> everywhere, prune the caches so the runtime regenerates them:
+>
+> ```bash
+> uv run --with pillow generate/gen_swoops.py --color 9999ff   # repo assets/
+> ./deploy.sh --prune-assets                                   # deploy, then bin the rest
+> ```
+>
+> `--prune-assets` deletes the generated PNGs in `~/.config/kitty/lcars` that
+> this deploy did not write (the font-size variants the prompt made at runtime),
+> plus `~/.cache/nvim/lcars` and `~/.cache/lcarcat/dashboard-assets`. Each comes
+> back on demand: the prompt on its next `SIGWINCH` or new shell, nvim on its
+> next start, the dashboard on its next run. Add `--dry-run` to list first.
+
 ---
 
 ## Runtime regen in nvim chrome

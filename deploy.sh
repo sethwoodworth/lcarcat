@@ -7,13 +7,22 @@
 # Usage:
 #   ./deploy.sh          copy repo files into ~/.config and verify
 #   ./deploy.sh --dry-run print what would be copied without touching anything
+#   ./deploy.sh --prune-assets  also delete generated PNGs this deploy does not
+#                        write, and the nvim asset cache, so both regenerate
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 DRY=0
-[[ "${1:-}" == "--dry-run" ]] && DRY=1
+PRUNE=0
+for argument in "$@"; do
+  case "$argument" in
+    --dry-run) DRY=1 ;;
+    --prune-assets) PRUNE=1 ;;
+    *) printf 'unknown option: %s\n' "$argument" >&2; exit 2 ;;
+  esac
+done
 
 # src (repo-relative)            dest (absolute)
 # One pair per line; globs in src are expanded.
@@ -121,6 +130,43 @@ deploy_tree() {
 deploy_tree "dashboard" "$CONFIG/lcarcat/dashboard"
 if (( ! DRY )) && [[ -f "$CONFIG/lcarcat/dashboard/run.sh" ]]; then
   chmod +x "$CONFIG/lcarcat/dashboard/run.sh"
+fi
+
+# Generated PNGs are named for their colour and cell size, never for their
+# geometry, so a shape change in gen_swoops.py leaves every cached file looking
+# current: the prompt and nvim both check "does this filename exist" and skip
+# regeneration. Pruning is how a geometry change reaches the other cell sizes
+# (font-size variants the prompt made at runtime) and nvim's own cache.
+prune_generated_assets() {
+  local kept=0 removed=0 file name
+  for file in "$CONFIG"/kitty/lcars/*.png; do
+    [[ -e "$file" ]] || continue
+    name="$(basename "$file")"
+    if printf '%s\n' "${mappings[@]}" | grep -q "/$name\$"; then
+      kept=$((kept + 1))
+      continue
+    fi
+    if (( DRY )); then printf '  would prune  %s\n' "$name"; else rm -f "$file"; fi
+    removed=$((removed + 1))
+  done
+  printf '  pruned %d generated PNG(s), kept %d deployed by this run\n' "$removed" "$kept"
+
+  local nvim_cache="${XDG_CACHE_HOME:-$HOME/.cache}/nvim/lcars"
+  if [[ -d "$nvim_cache" ]]; then
+    if (( DRY )); then printf '  would remove  %s\n' "$nvim_cache"; else rm -rf "$nvim_cache"; fi
+    printf '  cleared nvim asset cache\n'
+  fi
+
+  local dashboard_cache="${XDG_CACHE_HOME:-$HOME/.cache}/lcarcat/dashboard-assets"
+  if [[ -d "$dashboard_cache" ]]; then
+    if (( DRY )); then printf '  would remove  %s\n' "$dashboard_cache"; else rm -rf "$dashboard_cache"; fi
+    printf '  cleared dashboard asset cache\n'
+  fi
+}
+
+if (( PRUNE )); then
+  printf '\nPruning generated assets:\n'
+  prune_generated_assets
 fi
 
 cat <<EOF
