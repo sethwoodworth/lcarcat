@@ -74,21 +74,45 @@ A frame always changes thickness at each turn. Never the same thickness on two c
 ### 3. The swoop is sacred
 The LCARS elbow shape is identity-defining. Do not distort, flatten, or deform it. Large-radius outer corner; perpendicular inner corner.
 
-**The radius is currently wrong and is being worked out — see `lcarcat-2cc.7`.**
-`gen_swoops.py` derives the outer and inner radii independently, which puts the
-two arc centres 235px apart and the outer radius at 0.45× the bar thickness.
-Two facts are settled:
+**Radius measured 2026-09-17 from the reference props; the per-elbow numbers are
+in `lcarcat-2cc.7`, and the method and its traps in
+`docs/elbow-measurement.md`.** Five elbows across four references were fitted
+(both arcs, sub-pixel residuals), and they support bounds rather than a formula. Name the arms by width, not by
+direction: every elbow has a **thick arm** and a **thin arm**.
 
-- The arcs **cannot be concentric.** Two arcs tangent to their own edges share a
-  centre only when both arms have equal width, which rule 2 forbids. What they
-  can share is a *height*: for a top-left elbow both centres sit at `y = R_outer`,
-  differing horizontally by `stem_width − bar_thickness`.
-- **`R_outer` must exceed the bar thickness**, or the inner radius is negative
-  and the corner is not constructible. At 0.45× it computes to −167px.
+| Property | Measured across the references |
+|----------|-------------------------------|
+| `R_outer` | between the two arm widths, always: 1.0–2.9× the thin arm, 0.37–0.91× the thick arm |
+| `R_inner` | 0.48–0.85× `R_outer`, and never below ~0.8× the thin arm |
+| Both arcs | circles tangent to their own two edges (one outer corner is an ellipse at 1.5:1) |
+| The turn | never pinches: the narrowest colour across the corner equals the thin arm (0.91–1.02×) |
 
-The ratio itself is unmeasured. Three automated attempts to extract it from the
-reference props all failed; the bead records what went wrong so the next attempt
-starts somewhere new.
+Two rules previously recorded here are **disproved** and must not be reinstated:
+
+- `R_inner = R_outer − W` fails on four of the five elbows, by up to 18px. It
+  came from a single elbow whose bar thickness was never measured but *inferred
+  from the rule*; measured directly, that bar is 9.9px, not 16px.
+- **Centres share a height** fails too: the vertical offsets measured −15, +4,
+  −5, +25 and +26px. The arcs are independent, so `R_outer` need not exceed
+  either arm, and nothing forces a negative inner radius.
+
+**Settled 2026-09-22 — this is what `gen_swoops.py` draws.** Seth's call, after
+comparing the range in the elbow tuner:
+
+```
+R_outer = 1.0 × the THICK arm's width      ELBOW_OUTER_RADIUS_OVER_THICK_ARM
+R_inner = 0.48 × R_outer                   ELBOW_INNER_OVER_OUTER_RADIUS
+outer sweep is always a circle             (no ellipse; msd-1 is the only elliptical reference)
+```
+
+For our elbow (thin arm = 1-column stem = 19px, thick arm = 2-row bar = 76px)
+that is `R_outer` 76px and `R_inner` 36.5px, against 34px and 17px before. The
+fillet ends 112.5px down a 114px-tall image, so the 5×3-cell asset still holds.
+
+Both constants live at the top of `gen_swoops.py` and are meant to be tuned.
+Note where the choice sits against the references: `R_outer` at 1.0× the thick
+arm is a shade past the measured maximum (0.91×), and `R_inner` at 0.48× is the
+bottom of the measured band — a deliberate look, not a measurement.
 
 ### 4. No T/+ junctions
 **This is the design law.** Bars meet stems only via 2-sided elbows. Free ends get caps. T (3-way) and + (4-way) junctions do not exist in LCARS. Where a stem would cross a bar, one must terminate in a cap or turn in an elbow.

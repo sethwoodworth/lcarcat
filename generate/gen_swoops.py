@@ -53,6 +53,16 @@ SS = 4  # supersample factor
 BAR_ROWS = 2
 STEM_COLS = 1
 
+#: Elbow corner radii. Chosen by Seth on 2026-09-22 from the reference
+#: measurements in `lcarcat-2cc.7`; the bands those measurements support are in
+#: docs/lcars-design.md. Both are knobs, and the references bound rather than
+#: fix them: across five canon elbows the outer radius sat between the two arm
+#: widths (1.0-2.9x the thin arm, 0.37-0.91x the thick one) and the inner at
+#: 0.48-0.85 of the outer. The outer radius here is the THICK arm's own width,
+#: which is a shade past the measured maximum and is a deliberate look.
+ELBOW_OUTER_RADIUS_OVER_THICK_ARM = 1.0
+ELBOW_INNER_OVER_OUTER_RADIUS = 0.48
+
 
 def save_atomic(img, path):
     """Save a PNG via a sibling temp + rename(2).
@@ -135,8 +145,13 @@ def make_swoop(path, color, cols, stem_rows, cellw, cellh, flip, mirror=False,
     stemW = stem_cols * cw
     stemH = stem_rows * ch
     H = barH + stemH
-    r_out = min(ch * 0.9, barH)            # outer top-left corner radius (<= bar height)
-    r_in = min(stemW * 0.9, ch * 0.6)      # inner fillet radius
+    # One corner, not two independent ones: the inner radius is a fraction of the
+    # outer, and the outer follows the thicker arm. Clamped so the drawing stays
+    # inside the image -- the outer sweep cannot exceed either side, and the
+    # inner fillet has to finish within the stem's own rows and the bar's width.
+    thick_arm = max(barH, stemW)
+    r_out = min(ELBOW_OUTER_RADIUS_OVER_THICK_ARM * thick_arm, W, H)
+    r_in = min(ELBOW_INNER_OVER_OUTER_RADIUS * r_out, H - barH, W - stemW)
 
     pts = []
     pts.append((r_out, 0))                 # top edge start

@@ -98,6 +98,7 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Debug image.nvim placement/scroll quirks (buffer-bound images, off-by-one rows, horizontal scroll) | [`docs/nvim-harness.md`](nvim-harness.md) |
 | Deploy changes to ~/.config | [`docs/deployment.md`](deployment.md) |
 | Make design or layout decisions | [`docs/lcars-design.md`](lcars-design.md) |
+| Measure a shape off a reference prop | [`docs/elbow-measurement.md`](elbow-measurement.md) |
 | Use or define terms for shell/terminal structure (block, frame, stem, header, footer, rail, gap) | [`docs/terminal-block-terminology.md`](terminal-block-terminology.md) |
 | Understand PNG generation or asset caching | [`docs/asset-pipeline.md`](asset-pipeline.md) |
 | Work on the nvim terminal frame (blocks, PTY, frame_renderer/frame_buffer/term_input) | [`docs/nvim-terminal-frame.md`](nvim-terminal-frame.md) |
