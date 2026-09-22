@@ -299,16 +299,18 @@ properties of the whole bar, none expressible in a template. The custom hook get
 every cell of the strip.
 
 The strip is one row, so it follows one-row bar rules: flat runs are colored
-cells, the rounded ends are the powerline half-circle glyphs (the graphics
-protocol is not available on that strip), and pills are separated by explicit
+cells, the rounded ends are the powerline half-circle glyphs (kitty cannot
+display graphics-protocol images on that strip — see `docs/kitty-tab-bar.md`),
+and pills are separated by explicit
 black columns. Tab backgrounds stay black in the config so the cap glyphs render
 on black — a cap drawn over a colored background fills its own rounded notch and
 squares the corner.
 
 > **If it breaks, the tab bar disappears in every window.** A `tab_bar.py` that
-> raises takes the strip down everywhere. Test with
-> `test/captures/tab_bar.sh`, which builds an isolated kitty config directory
-> from the repo rather than touching `~/.config`.
+> raises takes the strip down everywhere. Try changes with
+> `test/tab_bar_sandbox.sh` (by hand) or `test/captures/tab_bar.sh`
+> (screenshots); both build an isolated kitty config directory from the repo
+> rather than touching `~/.config`. See `docs/kitty-tab-bar.md`.
 
 ---
 

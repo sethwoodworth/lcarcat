@@ -24,7 +24,9 @@ _kitty_at() { kitty @ --to "$SOCK" "$@"; }
 # Find the kitty process bound to our unique --listen-on socket.
 # Returns empty string if none is running.
 _find_kitty_pid() {
-    pgrep -f "kitty.*--listen-on=$SOCK" 2>/dev/null | head -n1
+    # `|| true`: pgrep exits 1 when nothing matches, and under pipefail that
+    # would abort `teardown` — the one subcommand that must never fail.
+    pgrep -f "kitty.*--listen-on=$SOCK" 2>/dev/null | head -n1 || true
 }
 
 _get_window_id() {

@@ -107,6 +107,6 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Write ANSI output into a `modifiable=false` display buffer (baleia) | [`docs/spike-2-baleia-findings.md`](spike-2-baleia-findings.md) |
 | Work on the LCARS dashboard, or reuse its segment library | [`docs/dashboard.md`](dashboard.md) |
 | Make something clickable, or read the mouse | [`docs/dashboard.md`](dashboard.md) — "Interaction" |
-| Change the kitty tab bar | [`docs/dashboard.md`](dashboard.md) — "The tab bar" |
+| Change the kitty tab bar | [`docs/dashboard.md`](dashboard.md) — "The tab bar"; [`docs/kitty-tab-bar.md`](kitty-tab-bar.md) for kitty's limits there (no images), reloading, and testing |
 | Understand why a design decision was made under an epic | [`docs/architecture-decisions.md`](architecture-decisions.md) |
 | Check expected block-demo geometry | [`docs/block_demo/spec.md`](block_demo/spec.md) |

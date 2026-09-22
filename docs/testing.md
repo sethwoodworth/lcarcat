@@ -104,6 +104,21 @@ Two conventions worth copying if you add zsh tests:
   shell state as well as emitting bytes, and command substitution runs them in a
   subshell that throws the mutations away.
 
+### test/unit/tab_bar_test.py
+
+```bash
+kitty +runpy "import runpy; runpy.run_path('test/unit/tab_bar_test.py', run_name='__main__')"
+```
+
+The custom kitty tab bar, driven through **kitty's real `TabBar.update`**
+(measure pass, then draw pass) on an off-screen `Screen`. No window opens. It
+must run inside kitty's Python because `kitty/tab_bar.py` imports kitty
+internals. Asserts that every tab is drawn with the active one orange, for each
+tab being active and at several strip widths, and that the status readout gives
+way to tabs. Set `LCARCAT_TAB_BAR_UNDER_TEST=<path>` to run it against another
+copy, e.g. `git show HEAD~1:kitty/tab_bar.py`, to prove a case fails without its
+fix.
+
 ### test/unit/run_osc_roundtrip_tests.sh
 
 ```bash
@@ -181,7 +196,7 @@ These produce PNGs in `test/screenshots/<name>/` but have no programmatic assert
 |--------|-----------------|
 | `block_demo.sh` | LCARS block frame styles in a scratch buffer |
 | `dashboard.sh` | The LCARS dashboard, one shot per layout. Uses `--hold`: a dashboard that *exits* cannot be shot honestly — the alternate screen tears the frame down on the way out, and on the normal screen the shell prompt that follows scrolls the outer header bar into scrollback before the capture runs |
-| `tab_bar.sh` | The custom LCARS tab bar at one, two and three tabs. Builds an **isolated** kitty config directory from the repo — a `tab_bar.py` that raises takes the strip down in every window, so it must not be tested by deploying it first |
+| `tab_bar.sh` | The custom LCARS tab bar at one, two and three tabs. Builds an **isolated** kitty config directory from the repo — a `tab_bar.py` that raises takes the strip down in every window, so it must not be tested by deploying it first. To try it by hand with no screenshots, use `test/tab_bar_sandbox.sh` (below) |
 | `frame_buffer.sh` | frame_buffer lifecycle: done/live/failed blocks via open_block→append_line→close_block |
 | `cmd_buffer_theme.sh` | Orange gutter in command buffer; periwinkle above |
 | `prompt_elbow_alignment.sh` | Elbow image aligned with stem bg cell |
@@ -191,6 +206,8 @@ These produce PNGs in `test/screenshots/<name>/` but have no programmatic assert
 | `terminal_frame.sh` | LCARS swoop prompt inside a full-window nvim `:terminal` |
 | `trivial_image_alignment.sh` | 1-cell image vs plain bg cell (uses `test/fixtures/trivial_align_test.py`) |
 | `vsplit_nvim_command_buffer.sh` | Side-by-side nvim + command buffer layout |
+
+**Trying the tab bar by hand.** `test/tab_bar_sandbox.sh [TAB_COUNT]` opens the same isolated tab bar config in a separate, normal kitty window — no screenshots, no Screen Recording permission, and your own kitty is never touched. A running kitty caches `tab_bar.py`, so re-run the script after each edit: it kills the previous sandbox by pid (waiting until it is gone) and opens a fresh one from the working tree. Each launch listens on its own socket under `/tmp/lcarcat-tab-bar-sandbox/`, because with one fixed socket an instance that survived its close keeps the path and the next kitty cannot listen on it. `test/tab_bar_sandbox.sh stop` closes it.
 
 ---
 

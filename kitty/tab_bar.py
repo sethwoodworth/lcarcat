@@ -143,18 +143,34 @@ def draw_tab(
     is_last: bool,
     extra_data: ExtraData,
 ) -> int:
-    """Draw one tab. kitty calls this once per tab, left to right."""
+    """Draw one tab. kitty calls this once per tab, left to right.
+
+    kitty calls it twice per redraw. The first pass (``extra_data.for_layout``)
+    measures each tab from column 0 with an unlimited budget; kitty then shares
+    the strip out as ``max_title_length`` per tab, gives any spare width to the
+    active tab, and during the real pass stops drawing as soon as the next tab's
+    budget no longer fits. So a tab must stay within its budget, and the
+    measuring pass must not include the status readout: counted there, the last
+    tab measures as the whole strip, and once it is active the inflated budget
+    makes kitty stop before drawing it at all.
+    """
     if index == 1:
         _draw_rail_stub(screen)
+    # The rail stub is chrome, not part of the first tab: measured against its
+    # budget, it would squeeze that one title to a single character on a narrow
+    # strip while every other tab keeps its NN- prefix.
+    pill_start = screen.cursor.x
 
     color = ORANGE if tab.is_active else PERIWINKLE
     title = _lcars_title(tab.title, index)
 
-    # Leave room for this tab's own caps and the separator after it, plus whatever
-    # the status readout will want on the right.
-    room = screen.columns - screen.cursor.x - 3
-    if is_last:
-        room -= _status_width(_status_segments())
+    # Leave room for this tab's own caps and the separator after it, within both
+    # kitty's budget for the tab and whatever the status readout will want on
+    # the right.
+    free_columns = screen.columns - screen.cursor.x
+    if is_last and not extra_data.for_layout:
+        free_columns -= _status_width(_status_segments())
+    room = min(max_title_length - (screen.cursor.x - pill_start), free_columns) - 3
     if room < 4:
         title = title[:max(1, room)]
     elif len(title) > room:
@@ -163,7 +179,7 @@ def draw_tab(
     _draw_pill(screen, title, color)
     _black(screen)
 
-    if is_last:
+    if is_last and not extra_data.for_layout:
         _draw_status(screen)
 
     return screen.cursor.x

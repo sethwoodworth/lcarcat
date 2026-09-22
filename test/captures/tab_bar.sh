@@ -9,6 +9,8 @@
 #
 #   bash test/captures/tab_bar.sh
 #   LCARCAT_KEEP_ALIVE=1 bash test/captures/tab_bar.sh   # leave kitty up
+#
+# To try the tab bar by hand, without screenshots: test/tab_bar_sandbox.sh
 
 set -euo pipefail
 
@@ -20,15 +22,9 @@ CONFIG_DIR="${LCARCAT_TAB_BAR_CONFIG_DIR:-/tmp/lcarcat-tab-bar-config}"
 export LCARCAT_SHOT_DIR="$SHOT_DIR"
 mkdir -p "$SHOT_DIR"
 
-# Build the isolated config directory: the repo's tab bar code, the repo's theme,
-# and a test config that includes the theme from THIS directory rather than from
-# ~/.config.
-rm -rf "$CONFIG_DIR"
-mkdir -p "$CONFIG_DIR"
-cp "$REPO/kitty/tab_bar.py" "$CONFIG_DIR/tab_bar.py"
-cp "$REPO/kitty/lcars.conf" "$CONFIG_DIR/lcars.conf"
-sed 's|include ~/.config/kitty/lcars.conf|include lcars.conf|' \
-  "$REPO/test/kitty_test.conf" > "$CONFIG_DIR/kitty.conf"
+# shellcheck source=test/tab_bar_config.sh
+source "$REPO/test/tab_bar_config.sh"
+build_tab_bar_config_directory "$CONFIG_DIR"
 
 export KITTY_CONFIG_DIRECTORY="$CONFIG_DIR"
 export LCARCAT_TEST_CONF="$CONFIG_DIR/kitty.conf"
