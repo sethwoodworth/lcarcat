@@ -47,6 +47,19 @@ See `README.md` for nomenclature.
   prompt state and emits the OSC feed while drawing nothing; `zsh/prompt_lcars.zsh` renders on
   top. One source of truth for prompt *data*, and the feed became testable without a terminal.
 
+- **LCARS dashboard** — `dashboard/`: a full-screen landing page for a kitty pane, built from
+  the same segment library as the prompt (panels, rails, chips, meters, block-letter titles).
+  Five layouts, switched from the navigation rail or `--layout`: the sky ones (orrery with its
+  key, moon, sun, sky readout, clock) and the work ones (Jira tickets assigned to you, your
+  open GitHub pull requests), fetched through `acli`/`gh` and cached to disk. Screenshots in
+  the README show only the sky layouts — the work panes carry real tickets.
+- **Custom kitty tab bar** — `kitty/tab_bar.py` draws the whole strip rather than filling in a
+  title template: a rail stub, a capped pill per tab, and a right-aligned stardate and clock.
+  That strip cannot show images at all, so the rounded ends are powerline glyphs; the reason,
+  and the rest of what kitty allows there, is in `docs/kitty-tab-bar.md`.
+- **Block-letter labels** — `generate/gen_block_text.py` bakes a label in Antonio at bar height,
+  which a terminal cell cannot do, and the dashboard sets every frame and panel title in it.
+
 ## Pending / ideas
 
 - **Split resize reflows stale swoop images** — opening/closing a vsplit reflows the pane, but

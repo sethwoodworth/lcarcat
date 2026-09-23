@@ -56,6 +56,43 @@ A working prototype under active development — command blocks, chips and exit 
 render live. Not yet a daily driver: full-screen programs (vim, less, fzf) still need
 alternate-screen passthrough, and block navigation and folding are queued.
 
+### The dashboard — a screen made of the same parts
+
+![the LCARS dashboard: an orrery of the planets with its key beneath, the moon and the sun beside it](docs/images/dashboard-astrometrics.png)
+
+A full-screen dashboard assembled from the same segment library the prompt uses: panels with
+rounded elbows and capped bars, vertical rails of stacked blocks, chips, meters, and titles set
+in block letters as tall as their bar. Curves and pictures are PNGs; everything flat is cells,
+so the whole thing reflows when the terminal resizes.
+
+The screen above is **astrometrics** — the planets plotted top-down on their orbits, with the
+key to that plot centred beneath it in the same panel, and the moon and the sun alongside.
+`stellar-cartography` gives the orrery the full height:
+
+![the stellar cartography layout: a full-height orrery, a sky readout, the moon and a clock](docs/images/dashboard-stellar-cartography.png)
+
+There are five layouts, switched from the rail on the left or with `--layout`. Two of them are
+about work rather than the sky: a **Jira** pane listing the tickets assigned to you and a
+**GitHub** pane listing your open pull requests, both fetched by the CLI you have already
+authenticated (`acli`, `gh`) and cached to disk. They are not pictured here for the obvious
+reason — the screenshots would be somebody's actual backlog.
+
+```bash
+dashboard/run.sh                      # the default layout
+dashboard/run.sh --list-layouts       # what else there is
+dashboard/run.sh --layout viewscreen --once
+```
+
+### The kitty tab bar
+
+![the LCARS tab bar: a rail stub, capped tab pills, and a stardate and clock at the right](docs/images/tab-bar.png)
+
+kitty lets a Python function draw the whole tab strip, so the tabs are LCARS too: a rail stub at
+the left edge, one capped pill per tab, and a stardate and clock right-aligned. That strip cannot
+show images — kitty gives it no GPU context — so the rounded ends are powerline half-circles and
+everything else is coloured cells. The limits are written up in
+[`docs/kitty-tab-bar.md`](docs/kitty-tab-bar.md).
+
 ## Nomenclature
 
 ```
@@ -143,12 +180,15 @@ AGENTS.md                      working rules for agents (min-viable-image, deplo
 deploy.sh                      copy repo -> ~/.config and verify (--dry-run to preview)
 docs/                          architecture, protocol spec, design notes, testing
 generate/gen_swoops.py         Pillow generator for the elbow + round caps (run via uv)
+generate/gen_block_text.py     Pillow generator for bar-height block-letter labels
+dashboard/                     the full-screen dashboard: canvas, segments, widgets, layouts
 assets/*.png                   generated caps (elbow-top/bottom, cap-right, legacy swoops)
 zsh/lcars_prompt_data.zsh      headless prompt state + OSC feed (no rendering)
 zsh/prompt_lcars.zsh           the switchable LCARS prompt (`lcarsprompt on|off`)
 nvim/lua/lcars/                the :LcarsTerm frame — PTY, block model, renderer, chrome
 nvim/colors/lcars.lua          LCARS colorscheme
 kitty/lcars.conf               LCARS 16-color palette + tab-bar/border chrome
+kitty/tab_bar.py               the custom LCARS tab strip (tab_bar_style custom)
 kitty/lcarcat.keybindings.conf scrollback prompt-navigation binds
 demos/*.sh                     standalone previews (palette, swoop, cells, prompt, timestamps)
 test/                          unit suites + kitty screenshot harnesses
@@ -195,7 +235,9 @@ Roughly where things stand:
 | Piece | State |
 |-------|-------|
 | Swoop prompt | Working, deployed, in daily use |
-| kitty theme + tab pills | Working |
+| kitty theme | Working |
+| kitty tab bar (custom LCARS strip) | Working |
+| Dashboard | Working — five layouts, live Jira/GitHub panes, astronomy widgets |
 | Asset generator (`gen_swoops.py`) | Working; regenerates on cell-size change |
 | `:LcarsTerm` frame | Working prototype — blocks, chips, exit status render live |
 | OSC 7447 protocol | Specified and versioned; one emitter, one consumer |

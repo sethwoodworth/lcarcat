@@ -4,6 +4,11 @@ A landing page for a kitty pane: work queues on one side, the solar system on th
 other. Built on the same rule as the rest of lcarcat — flat chrome is terminal
 cells, curves are small PNGs placed with the kitty graphics protocol.
 
+![the astrometrics layout: an orrery with its key beneath, the moon and the sun beside it](images/dashboard-astrometrics.png)
+
+*astrometrics, the default layout. The work layouts are not pictured anywhere in
+this repo: their panes carry real Jira tickets and real pull requests.*
+
 ```
 dashboard/run.sh                      # default layout, redrawing once a second
 dashboard/run.sh --layout stellar-cartography
