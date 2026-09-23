@@ -2,6 +2,23 @@
 
 Agent instructions, behavioral rules, and architecture documentation are in `AGENTS.md`.
 
+## Knowledge goes in `docs/`, not in a memory store
+
+**This overrides the "use `bd remember` for persistent knowledge" line in the
+managed Beads block below.** Beads memories fragment across accounts and are
+invisible to anyone reading the repository, so a finding worth keeping is
+written up as prose:
+
+1. Put it in the `docs/` file that owns the subject, or a new one if none does.
+2. Index it — the "Task routing" table in `AGENTS.md` **and** the matching table
+   in `docs/codebase-overview.md`. A doc nothing points at is a doc nobody reads.
+3. Point the bead at the doc, rather than repeating the finding in bead notes.
+
+Beads remain the issue tracker: what to do, and what was decided about a
+specific piece of work. `docs/` is what the project knows.
+
+Existing `bd remember` entries are still readable context; do not add to them.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
 

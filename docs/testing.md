@@ -49,6 +49,11 @@ reported as a title sitting flush against a cap that in fact had three bar
 columns before it. Measure cap geometry at the bar's TOP or BOTTOM row, where
 the curve leaves partially-filled cells.
 
+And before trusting any capture at all, read `docs/test-harness.md`,
+"Taking a capture that is worth looking at" — an unpainted frame, a failed
+`screencapture`, and a cold asset cache all produce screenshots that look
+like rendering bugs.
+
 **Prefer the semantic check (`get_cell_grid.py`) for programmatic assertions.** It reads kitty's terminal model directly and does not depend on screenshot timing. The pixel check (`analyze_gutter_cells.py`) is useful for visual confirmation and diagnosing rendering bugs downstream of the terminal model, but screenshot timing makes it unreliable as a pass/fail gate — a screenshot taken a few milliseconds before nvim finishes painting will silently show the wrong color.
 
 A pixel check passing with a semantic check failing means the right color reached the screen despite wrong SGR state (possible with compositor caching, but unlikely). Pixel failing with semantic passing is a rendering or anti-aliasing bug, not a logic bug.

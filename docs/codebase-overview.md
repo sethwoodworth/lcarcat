@@ -31,7 +31,8 @@ lcarcat/
 │   └── layouts.py              — named arrangements of widgets into panels
 ├── generate/
 │   ├── gen_swoops.py           — curve PNGs (elbows, caps, swoops); deployed to ~/.config/kitty/lcars/
-│   └── gen_block_text.py       — bar-height block-letter labels, baked to PNG
+│   ├── gen_block_text.py       — bar-height block-letter labels, baked to PNG
+│   └── measure_elbow.py        — measures a reference elbow's radii (docs/elbow-measurement.md)
 ├── assets/                     — pre-built PNGs for zsh prompt at 19×38 device px per cell
 ├── docs/                       — engineering reference docs (this directory)
 ├── test/

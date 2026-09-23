@@ -45,6 +45,36 @@ quantises the very curvature being measured.
 
 ---
 
+## The tool
+
+`generate/measure_elbow.py` is the method above, so a new reference does not mean
+re-deriving it:
+
+```bash
+uv run --with pillow --with numpy --with scipy --with scikit-image \
+    generate/measure_elbow.py references/elbows/<crop>.jpg \
+    --transform flip_vertical --overlay /tmp/check.png
+```
+
+It measures **one elbow that you have already cropped**; it does not find elbows,
+for the reason in step 1. `--transform` names how to turn the crop into the
+canonical top-left elbow (`identity`, `rotate180`, `flip_vertical`,
+`flip_horizontal`); `--color RRGGBB` picks the shape out of a crop holding more
+than one; `--box L,T,R,B` trims further; `--json` prints everything.
+
+It reports the arm widths, all three fits of each corner, and the ratios, and it
+says how many columns and rows each straight edge was measured over — a handful
+means the crop is too tight to trust that number, which is exactly the Voyager
+bar's problem.
+
+**Always pass `--overlay`, and look at it.** The edges and the fitted corners are
+drawn on the image. A number whose overlay you have not seen is a number you have
+not checked, and this is the tool that previously produced confident wrong ones.
+
+Checked against the published figures: the Voyager elbow comes back with arms
+58.8 and 9.9px, an outer radius of 29.2 (rms 0.07) and an inner of 13.9, matching
+what `lcarcat-2cc.7` recorded.
+
 ## The traps
 
 **Never infer an arm width from the rule you are testing.** This is what voided

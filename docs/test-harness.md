@@ -101,6 +101,39 @@ The test kitty launches fullscreen (`--start-as=fullscreen`) with `window_paddin
 
 ---
 
+## Taking a capture that is worth looking at
+
+Three ways a screenshot lies, all of which cost a round trip before they were
+written down here. The harness now handles the first two; the third is on you.
+
+**A frame that has not been painted yet.** `send-text` returns as soon as the
+keystrokes are delivered, not when the program has drawn. Snapshot then and you
+get the shell prompt, or a black rectangle, which reads exactly like a rendering
+bug. Wait on the pane's own text instead of guessing a `sleep`:
+
+```bash
+bash test/screenshot_harness.sh send-text "dashboard/run.sh --frames 2 --hold"$'\n'
+bash test/screenshot_harness.sh wait-for-text 'bodies|luna' 40
+bash test/screenshot_harness.sh snapshot my-shot
+```
+
+`wait-for-text PATTERN [SECONDS]` polls `kitty @ get-text` and exits non-zero if
+the pattern never arrives, so a broken run fails loudly instead of capturing
+something wrong.
+
+**`screencapture` failing at random.** "could not create image from window"
+happens intermittently — sometimes a stale window id, sometimes the Screen
+Recording permission, sometimes nothing identifiable. It also exits 0 on some of
+those failures, so the file's existence is the only trustworthy check.
+`snapshot` now retries three times and checks the file each time, and reports
+what to look at if all three fail.
+
+**A cold asset cache.** The first run of a layout generates every curve PNG it
+needs, which takes seconds; a capture taken during that is genuinely dark
+because the images really are missing. It looks like a regression and is not.
+Either warm the cache with a throwaway run first, or use `--frames 2` and wait
+for the second frame. If you have just cleared `~/.cache/lcarcat/`, expect this.
+
 ## test/kitty_test.conf
 
 Minimal kitty config for test runs. Loads the LCARS theme and uses Fantasque Sans Mono at font_size 18, which produces 19×38px cells (device pixels). Kept minimal to reduce variables.

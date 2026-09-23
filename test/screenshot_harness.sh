@@ -4,6 +4,7 @@
 # Subcommands:
 #   launch                  Start a detached test kitty instance
 #   snapshot LABEL          Capture the kitty window to $SHOT_DIR/LABEL.png; prints path
+#   wait-for-text PAT [SEC] Block until the pane's text matches PAT (default 30s)
 #   launch-nvim-vsplit FILE Open nvim with FILE in a vsplit (left pane); focus goes to new window
 #   launch-cmd-buffer       Open the nvim command buffer split (replicates ctrl+a>b)
 #   send-text TEXT          Send text to the most recently focused window
@@ -92,17 +93,56 @@ APPLESCRIPT
 
   snapshot)
     label="${2:-unlabeled}"
-    win_id="$(_get_window_id)"
-    if [ -z "$win_id" ]; then
-      echo "ERROR: could not read platform_window_id from kitty @ ls" >&2
+    outfile="$SHOT_DIR/${label}.png"
+    rm -f "$outfile"
+    # screencapture fails intermittently with "could not create image from
+    # window" — sometimes a stale window id from a previous kitty, sometimes the
+    # Screen Recording permission, and sometimes nothing identifiable that a
+    # retry does not cure. It also exits 0 on some of those failures, so the
+    # file's existence is the only trustworthy check.
+    for attempt in 1 2 3; do
+      win_id="$(_get_window_id)"
+      if [ -z "$win_id" ]; then
+        echo "ERROR: could not read platform_window_id from kitty @ ls" >&2
+        exit 1
+      fi
+      sleep 0.4
+      # In fullscreen mode there is no OS chrome — screencapture -l gives us the
+      # terminal content at device pixel resolution, origin (0,0) = cell (0,0).
+      screencapture -l"$win_id" -x "$outfile" 2>/dev/null || true
+      if [ -s "$outfile" ]; then
+        echo "$outfile"
+        exit 0
+      fi
+      [ "$attempt" -lt 3 ] && sleep 2
+    done
+    echo "ERROR: screencapture produced nothing after 3 attempts (window $win_id)." >&2
+    echo "       If it never succeeds, check Screen Recording permission for your terminal." >&2
+    exit 1
+    ;;
+
+  wait-for-text)
+    # Block until the pane's text matches, so a capture is never taken of a
+    # frame that has not been painted yet. A dashboard needs several seconds on
+    # a cold asset cache, and a screenshot taken early is a black rectangle that
+    # looks exactly like a rendering bug.
+    pattern="${2:-}"
+    timeout="${3:-30}"
+    if [ -z "$pattern" ]; then
+      echo "ERROR: wait-for-text needs a pattern" >&2
       exit 1
     fi
-    sleep 0.4
-    outfile="$SHOT_DIR/${label}.png"
-    # In fullscreen mode there is no OS chrome — screencapture -l gives us the
-    # terminal content at device pixel resolution, origin (0,0) = cell (0,0).
-    screencapture -l"$win_id" -x "$outfile"
-    echo "$outfile"
+    waited=0
+    while [ "$waited" -lt "$timeout" ]; do
+      if _kitty_at get-text 2>/dev/null | grep -qiE "$pattern"; then
+        echo "matched after ${waited}s"
+        exit 0
+      fi
+      sleep 2
+      waited=$((waited + 2))
+    done
+    echo "ERROR: '$pattern' never appeared in the pane within ${timeout}s" >&2
+    exit 1
     ;;
 
   launch-nvim-vsplit)
@@ -170,7 +210,7 @@ APPLESCRIPT
     ;;
 
   *)
-    echo "Usage: $0 {launch|snapshot LABEL|launch-nvim-vsplit [FILE]|launch-cmd-buffer|send-text TEXT|focus-shell|remote CMD...|teardown}" >&2
+    echo "Usage: $0 {launch|snapshot LABEL|wait-for-text PATTERN [SECONDS]|launch-nvim-vsplit [FILE]|launch-cmd-buffer|send-text TEXT|focus-shell|remote CMD...|teardown}" >&2
     exit 1
     ;;
 esac
