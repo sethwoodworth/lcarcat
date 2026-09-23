@@ -16,10 +16,11 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence
 
 from .geometry import Rect
-from .palette import (GOLD, LILAC, ORANGE, PERIWINKLE, SAGE, SKY, Color)
+from .palette import (GOLD, LILAC, ORANGE, PERIWINKLE, SAGE, SKY, Color,
+                      accent_against)
 from .interaction import Handler, on_click
-from .segments import Chip, ChipStyle, Painter, Panel, PanelStyle, RailBlock
-from .widgets import (JiraWidget, MoonWidget, OrreryKeyWidget, OrreryWidget,
+from .segments import Chip, Painter, Panel, PanelStyle, RailBlock
+from .widgets import (JiraWidget, MoonWidget, OrreryWidget,
                       PullRequestWidget, SkyWidget, SolWidget, StardateWidget,
                       TelemetryWidget, Widget)
 
@@ -64,7 +65,20 @@ class Layout:
     description = ""
     #: Color of the outer frame and the label on its rail.
     frame_color: Color = ORANGE
-    frame_title = "LCARCAT"
+    #: What the outer frame is called. Defaults to the layout's own full name:
+    #: the frame is the screen, and the screen is this layout.
+    @property
+    def frame_title(self) -> str:
+        return self.display_name
+
+    #: Full name, for the frame title and any prose. The rail has room for the
+    #: short one only -- see `rail_name`.
+    display_name = "LCARS"
+
+    #: What the navigation rail calls this layout. A rail is a stem a handful of
+    #: columns wide, so these are short by construction rather than by
+    #: truncation.
+    rail_name = "LCARS"
 
     def __init__(self) -> None:
         self.widgets: List[Widget] = []
@@ -95,27 +109,33 @@ class Layout:
         """The rail when nothing is navigable. Layouts override THIS, not
         :meth:`frame_rail_blocks` -- overriding that would quietly drop
         navigation from the layout that did it."""
+        # No colours here: draw_rail takes them from palette.ACCENT_SEQUENCE in
+        # order, so every rail in every layout runs the same progression.
         return (
-            RailBlock("SENSORS", PERIWINKLE, 2.0),
-            RailBlock("COMMS", SKY, 1.4),
-            RailBlock("NAV", GOLD, 1.8),
-            RailBlock("OPS", LILAC, 1.2),
-            RailBlock("LIB", SAGE, 2.4),
+            RailBlock("SENSORS", weight=2.0),
+            RailBlock("COMMS", weight=1.4),
+            RailBlock("NAV", weight=1.8),
+            RailBlock("OPS", weight=1.2),
+            RailBlock("LIB", weight=2.4),
         )
 
     def navigation_blocks(self) -> Sequence[RailBlock]:
         """One clickable block per layout, the current one lit.
 
-        Colour carries state: the active layout takes the frame's own accent so
-        the rail reads as a set of tabs rather than a list of links.
+        A navigation rail is not decorative, so it does not run the accent
+        sequence: every block takes the frame's own colour and the rail reads as
+        part of the frame. Only the current layout differs, and only enough to
+        be found -- one block in another accent, which is the quietest mark that
+        still reads as "you are here".
         """
         navigate = self.on_navigate
         blocks: List[RailBlock] = []
         for name in names():
+            layout = LAYOUTS[name]
             current = name == self.name
             blocks.append(RailBlock(
-                label=name.upper().replace("-", " "),
-                color=self.frame_color if current else PERIWINKLE,
+                label=layout.rail_name,
+                color=accent_against(self.frame_color) if current else self.frame_color,
                 weight=1.0,
                 action=(None if navigate is None or current
                         else on_click(lambda chosen=name: navigate(chosen))),
@@ -123,7 +143,9 @@ class Layout:
         return tuple(blocks)
 
     def frame_chips(self) -> Sequence[Chip]:
-        return (Chip(self.name.upper(), style=ChipStyle.COLOR),)
+        # The frame's title already carries the layout's name; a chip repeating
+        # it would be the same word twice in one bar.
+        return ()
 
     # -- shared ------------------------------------------------------------
 
@@ -171,6 +193,8 @@ class BridgeLayout(Layout):
     """
 
     name = "bridge"
+    display_name = "BRIDGE"
+    rail_name = "BRIDGE"
     description = "Orrery and sky with a work column on the right"
 
     def __init__(self) -> None:
@@ -222,6 +246,8 @@ class OperationsLayout(Layout):
     """
 
     name = "operations"
+    display_name = "OPERATIONS"
+    rail_name = "OPS"
     description = "Work only: the Jira queue beside the pull request queue"
     frame_color = GOLD
 
@@ -236,9 +262,9 @@ class OperationsLayout(Layout):
 
     def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
-            RailBlock("TASKS", GOLD, 2.4),
-            RailBlock("REVIEW", LILAC, 2.0),
-            RailBlock("QUEUE", SKY, 1.6),
+            RailBlock("TASKS", weight=2.4),
+            RailBlock("REVIEW", weight=2.0),
+            RailBlock("QUEUE", weight=1.6),
         )
 
     def place(self, content: Rect) -> List[Placement]:
@@ -267,6 +293,8 @@ class StellarCartographyLayout(Layout):
     """
 
     name = "stellar-cartography"
+    display_name = "STELLAR CARTOGRAPHY"
+    rail_name = "STELLAR"
     description = "The sky alone: full-height orrery, sky readout, moon and clock"
     frame_color = PERIWINKLE
 
@@ -280,10 +308,10 @@ class StellarCartographyLayout(Layout):
 
     def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
-            RailBlock("STELLAR", PERIWINKLE, 2.6),
-            RailBlock("CARTO", SKY, 2.0),
-            RailBlock("EPHEM", GOLD, 1.6),
-            RailBlock("LUNA", LILAC, 1.4),
+            RailBlock("STELLAR", weight=2.6),
+            RailBlock("CARTO", weight=2.0),
+            RailBlock("EPHEM", weight=1.6),
+            RailBlock("LUNA", weight=1.4),
         )
 
     def place(self, content: Rect) -> List[Placement]:
@@ -315,25 +343,29 @@ class AstrometricsLayout(Layout):
     """
 
     name = "astrometrics"
+    display_name = "ASTROMETRICS"
+    rail_name = "ASTRO"
     description = "Facing frames: large orrery left, key/moon/sun right"
     frame_color = PERIWINKLE
 
     def __init__(self) -> None:
         super().__init__()
+        # The orrery carries its own key now, as a strip beneath the plot, so
+        # this layout has one pane fewer than it used to and the freed rows go
+        # to the readouts that were being squeezed.
         self.orrery = OrreryWidget(title="ASTROMETRICS")
-        self.key = OrreryKeyWidget(title="KEY")
         self.moon = MoonWidget()
         # The sun replaces the clock here: this screen is about what is in the
         # sky, and a solar disc with its space weather says more than the time.
         self.sol = SolWidget()
-        self.widgets = [self.orrery, self.key, self.moon, self.sol]
+        self.widgets = [self.orrery, self.moon, self.sol]
 
     def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
-            RailBlock("ASTRO", PERIWINKLE, 2.4),
-            RailBlock("METRICS", SKY, 1.8),
-            RailBlock("EPHEM", GOLD, 1.6),
-            RailBlock("LUNA", LILAC, 1.4),
+            RailBlock("ASTRO", weight=2.4),
+            RailBlock("METRICS", weight=1.8),
+            RailBlock("EPHEM", weight=1.6),
+            RailBlock("LUNA", weight=1.4),
         )
 
     def place(self, content: Rect) -> List[Placement]:
@@ -341,24 +373,15 @@ class AstrometricsLayout(Layout):
         # chrome face across, and it has to read as deliberate space rather than
         # as the seam between two panels that nearly touch.
         orrery_rect, right = content.split_horizontal(0.60, 0.40, gap=3)
-        # Heights follow what each pane actually holds rather than a tidy split.
-        # The moon is a square picture flanked by readout columns, so past a
-        # certain height it stops growing and just pads itself with empty rows --
-        # which is what a half-column share gave it. The key is the opposite: it
-        # is a list that was being truncated, losing the minor planets off the
-        # bottom.
-        # Each share is what the pane needs, not a tidy fraction: the moon and
-        # the sun are square pictures flanked by readouts (about ten content rows
-        # each) and the key is a two-column list of fifteen bodies (eight rows).
-        moon_rect, lower = right.split_vertical(0.35, 0.65)
-        key_rect, sol_rect = lower.split_vertical(0.48, 0.52)
+        # Two panes in the right-hand column now that the key travels with the
+        # plot. Both are square pictures flanked by readouts, so they split it
+        # evenly rather than by a fraction tuned around a list.
+        moon_rect, sol_rect = right.split_vertical(0.5, 0.5)
 
         return [
             Placement(self.orrery, orrery_rect, facing="right",
                       rail_width=max(6, min(10, orrery_rect.width // 12)),
                       color=PERIWINKLE),
-            Placement(self.key, key_rect, rail_width=_rail_for(key_rect),
-                      color=SKY),
             Placement(self.moon, moon_rect, rail_width=_rail_for(moon_rect),
                       color=LILAC),
             Placement(self.sol, sol_rect, rail_width=_rail_for(sol_rect),
@@ -382,6 +405,8 @@ class ViewscreenLayout(Layout):
     """
 
     name = "viewscreen"
+    display_name = "VIEWSCREEN"
+    rail_name = "SCREEN"
     description = "Ambient: an oversized clock with sky and queue counts"
     frame_color = PERIWINKLE
 
@@ -395,9 +420,9 @@ class ViewscreenLayout(Layout):
 
     def decorative_rail_blocks(self) -> Sequence[RailBlock]:
         return (
-            RailBlock("VIEW", PERIWINKLE, 3.0),
-            RailBlock("SCAN", SKY, 2.0),
-            RailBlock("IDLE", LILAC, 4.0),
+            RailBlock("VIEW", weight=3.0),
+            RailBlock("SCAN", weight=2.0),
+            RailBlock("IDLE", weight=4.0),
         )
 
     def place(self, content: Rect) -> List[Placement]:

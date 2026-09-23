@@ -63,6 +63,23 @@ buffer and the cap. It reads as a tick mark closing the bar — the same role a
 tally stroke plays at the end of a run — and it is the only place a single
 isolated column of accent is allowed.
 
+### rail block (vertical chip)
+A stacked segment in a vertical rail — a chip stood on end. Labeled in black,
+sized by proportional weight rather than by content, and clickable where a rail
+carries navigation.
+
+- **Spaced like chips**: a black gap between neighbours, *and the same gap at
+  both ends*. Without the end gaps the first and last blocks fuse with the
+  elbows above and below, and the rail reads as a stem that changes colour
+  instead of as a stack of segments.
+- **Coloured by position**, from `palette.ACCENT_SEQUENCE`, so every rail in
+  every layout runs the same progression instead of each one picking its own.
+- A block that carries **meaning** — the active tab, an alert — departs from the
+  sequence and takes its own colour. What marks it is the break in the
+  progression, not the particular hue.
+- A rail with **no** blocks is a plain stem: one solid run, continuous with the
+  elbows, and no gaps.
+
 ### chip
 Two kinds, and the difference is what the label sits on.
 

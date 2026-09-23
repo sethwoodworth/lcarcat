@@ -126,6 +126,24 @@ before it and nothing after, and two bar-color columns always precede a cap.
 reserves and the size it draws cannot drift apart. Chips are given in reading
 order, left to right, and the group is right-aligned as a whole.
 
+## The key travels with the plot
+
+The orrery's legend used to be its own widget in its own panel, which put a
+second rail, a second header bar and a cap between a picture and the names of
+the things in it. It is now a strip inside the orrery's own pane: the plot takes
+the upper area, the key the bottom few rows, and nothing is drawn between them —
+the space is the separation.
+
+The key is **centred on the plot's midline**. Both take the pane's full width,
+and the key centres itself within it, so a line through the sun passes through
+the middle of the key. Centre on the columns that *fit* rather than the columns
+the entries *fill* and the box comes out nearly pane-wide, which puts the key
+flush left; `OrreryWidget.key_bounds(rect)` reports the box it will actually
+occupy, and `panel_split_demo --guides` draws that box against a rule through
+the sun.
+
+`show_key=False` leaves the plot alone in its pane.
+
 ## Block-letter titles
 
 A panel's title is a label chip set in bar-height block letters — an image,
@@ -173,6 +191,25 @@ elbow, rail and cap rules identical at both levels.
 
 ---
 
+## Naming, short and long
+
+A layout answers to three names, and they are not interchangeable:
+
+| | example | used by |
+|---|---|---|
+| `name` | `stellar-cartography` | `--layout`, the registry, `--list-layouts` |
+| `display_name` | `STELLAR CARTOGRAPHY` | the outer frame's own title, in block letters |
+| `rail_name` | `STELLAR` | the navigation rail, which is a stem a few columns wide |
+
+The rail names are short **by construction**, not by truncation — a rail that
+clipped `STELLAR CARTOGRAPHY` to `STELL` would be naming nothing. Below that the
+rail abbreviates with the same ladder the bar titles use (`STLLR`), so a narrow
+stem still reads.
+
+The frame wears the layout's own name because the frame *is* the screen. It used
+to say `LCARCAT` and carry the layout name again as a chip beside it, which was
+the same word twice in one bar.
+
 ## Widgets
 
 A widget renders into a `Rect` and knows nothing about its neighbours. `refresh`
@@ -184,11 +221,10 @@ failing `refresh` marks that widget, and only that widget, offline.
 |------|-------|
 | `jira` | assigned work items, in-flight and blocked ranked above the backlog |
 | `pull-requests` | my open PRs and PRs awaiting my review, with CI and review state |
-| `orrery` | the planets plotted top-down on their orbits |
+| `orrery` | the planets plotted top-down on their orbits, with its key as a centred strip beneath the plot |
 | `sky` | where each body is from the ground, and whether it is up |
 | `moon` | NASA's hourly Dial-A-Moon frame, with libration and eclipse data |
 | `sol` | SDO's latest solar disc (AIA 304Å + PFSS field lines by default) with NOAA space weather |
-| `orrery-key` | legend for the orrery: symbol, name and distance for every body |
 | `stardate` | local time in block digits, date, stardate |
 | `telemetry` | load, memory, disk, battery as LCARS meters |
 
@@ -202,9 +238,9 @@ competes with the chrome that is supposed to carry the design.
 
 | Name | Shape |
 |------|-------|
-| `bridge` | *(default)* orrery and sky across the top, work column on the right |
+| `bridge` | orrery and sky across the top, work column on the right |
 | `operations` | work only, holodeck-panel style — Jira as a three-column catalogue, PRs as capped pills |
-| `astrometrics` | facing frames — large orrery left with a right-facing elbow, key/moon/sun right |
+| `astrometrics` | *(default)* facing frames — large orrery left with a right-facing elbow, moon and sun right |
 | `stellar-cartography` | the sky alone — full-height orrery, sky readout, moon, clock; no work panes |
 | `viewscreen` | ambient — an oversized clock with sky and queue counts |
 

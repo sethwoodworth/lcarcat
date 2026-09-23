@@ -33,7 +33,7 @@ from . import labels
 from .geometry import Rect
 from .images import ImageTransmitter
 from .interaction import Click, Handler, HitMap, on_click
-from .palette import CANVAS, TEXT, Color
+from .palette import CANVAS, TEXT, Color, accent
 
 # A cap needs clear air before it or it reads as a blob stuck to the last chip.
 PRE_CAP_COLUMNS = 2
@@ -578,9 +578,21 @@ def draw_rail(
 ) -> None:
     """Fill a vertical rail with stacked blocks.
 
-    With no blocks the rail is one solid run -- a plain stem. With blocks it becomes
-    the LCARS sidebar: segments in varying accents, each labeled in black, which is
-    where a dashboard puts section names without spending content width on them.
+    With no blocks the rail is one solid run -- a plain stem, continuous with
+    the elbows above and below it. With blocks it becomes the LCARS sidebar:
+    stacked segments, each labeled in black, which is where a dashboard puts
+    section names without spending content width on them.
+
+    A block is a chip stood on end, and it is spaced like one: a black gap
+    between neighbours, and the same gap at BOTH ENDS, so the first and last
+    blocks read as segments in the rail rather than as the elbows' stems
+    growing thicker.
+
+    Colors come from ``palette.ACCENT_SEQUENCE`` by position unless a block
+    names its own. A rail that picks its own colors per layout drifts; taking
+    them in order means every rail in every layout runs the same progression,
+    and a block that carries meaning (the active tab, an alert) stands out by
+    departing from it.
     """
     canvas = painter.canvas
     if not rect:
@@ -590,17 +602,21 @@ def draw_rail(
         return
 
     weights = [max(0.01, block.weight) for block in blocks]
-    heights = _proportional(rect.height - gap * (len(blocks) - 1), weights)
+    # One gap between each pair, plus one at each end.
+    heights = _proportional(rect.height - gap * (len(blocks) + 1), weights)
 
-    y = rect.y
-    for block, height in zip(blocks, heights):
+    y = rect.y + gap
+    for index, (block, height) in enumerate(zip(blocks, heights)):
         if height <= 0:
             continue
         body = Rect(rect.x, y, rect.width, height)
-        canvas.fill(body, block.color or color)
+        canvas.fill(body, block.color or accent(index))
         painter.claim(body, block.action, block.label)
         if block.label and rect.width >= 3:
-            label = truncate(block.label, rect.width - 1)
+            # Abbreviate rather than clip: a rail is a few columns wide, and
+            # STLLR reads where STELL does not. Same ladder the bar titles use.
+            label = labels.fit(block.label, text_width, rect.width - 1) \
+                or truncate(block.label, rect.width - 1)
             label_row = body.bottom - 1
             if align_labels == "right":
                 canvas.text_right(rect.right - 1, label_row, label,

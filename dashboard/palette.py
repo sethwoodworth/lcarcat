@@ -80,3 +80,16 @@ ACCENT_SEQUENCE = (PERIWINKLE, GOLD, LILAC, SKY, SAGE)
 
 def accent(index: int) -> Color:
     return ACCENT_SEQUENCE[index % len(ACCENT_SEQUENCE)]
+
+
+def accent_against(color: Color) -> Color:
+    """The first accent that is not ``color``.
+
+    For marking one element out of a group that all share a colour -- the
+    current tab in a rail of frame-coloured blocks -- without reaching for a
+    louder accent than the mark needs.
+    """
+    for candidate in ACCENT_SEQUENCE:
+        if candidate != color:
+            return candidate
+    return ACCENT_SEQUENCE[0]

@@ -12,7 +12,7 @@ from .base import Widget, WidgetChrome
 from .github import PullRequestWidget
 from .jira import JiraWidget
 from .framed_image import FramedImageWidget
-from .orrery import MoonWidget, OrreryKeyWidget, OrreryWidget, SkyWidget
+from .orrery import MoonWidget, OrreryWidget, SkyWidget
 from .sol import SolWidget
 from .stardate import StardateWidget
 from .telemetry import TelemetryWidget
@@ -23,7 +23,6 @@ REGISTRY: Dict[str, Callable[[], Widget]] = {
     "jira": JiraWidget,
     "pull-requests": PullRequestWidget,
     "orrery": OrreryWidget,
-    "orrery-key": OrreryKeyWidget,
     "sky": SkyWidget,
     "moon": MoonWidget,
     "sol": SolWidget,
@@ -45,7 +44,7 @@ def names() -> List[str]:
 
 
 __all__ = [
-    "FramedImageWidget", "JiraWidget", "MoonWidget", "OrreryKeyWidget",
+    "FramedImageWidget", "JiraWidget", "MoonWidget",
     "OrreryWidget", "SolWidget",
     "PullRequestWidget",
     "SkyWidget", "StardateWidget", "TelemetryWidget", "Widget", "WidgetChrome",

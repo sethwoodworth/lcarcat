@@ -17,6 +17,7 @@ Load only the docs relevant to your task:
 | shell block terminology (block, frame, stem, header, footer, gap, OSC 133) | `docs/terminal-block-terminology.md` |
 | colors or palette | `docs/palette.md` |
 | the LCARS dashboard (segments, widgets, layouts, Jira/GitHub panes) | `docs/dashboard.md` |
+| bar titles, chips or rail blocks — what goes in a bar and where | `docs/lcars-design.md` (the rules), `docs/dashboard.md` (how they are drawn) |
 | the kitty tab bar (`tab_bar_style custom`) | `docs/dashboard.md` — "The tab bar"; `docs/kitty-tab-bar.md` for what kitty allows there (no images), reloading, and sandbox testing; `docs/deployment.md` for the revert path |
 | clickable regions, mouse input, terminal modes | `docs/dashboard.md` — "Interaction" |
 | screenshot tests or evaluating rendering | `docs/testing.md` (what to run), then `docs/test-harness.md` (scenario mechanics) or `docs/test-tools.md` (analysis tools) |

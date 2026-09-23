@@ -17,7 +17,7 @@ from ..geometry import Rect
 from ..palette import (CANVAS, DIM_VIOLET, GOLD, LILAC, ORANGE, PERIWINKLE,
                        RED_ALERT, SAGE, SKY, STEM_DIM, TEXT, Color)
 from .. import plots
-from ..segments import Chip, ChipStyle, Painter, draw_readout
+from ..segments import Chip, ChipStyle, Painter
 from ..sources import dialamoon, ephemeris
 from .base import Widget, WidgetChrome
 from .framed_image import FramedImageWidget
@@ -64,14 +64,23 @@ class OrreryWidget(Widget):
         inner_only: bool = False,
         minor_planets: bool = True,
         show_moon: bool = True,
+        show_key: bool = True,
+        show_distance: bool = True,
     ) -> None:
         super().__init__(title=title, color=color)
         self.inner_only = inner_only
         self.minor_planets = minor_planets
         self.show_moon = show_moon
+        #: The legend lives in the plot's own pane, as a strip beneath it. It
+        #: was a separate widget in its own panel, which put a second rail, a
+        #: second header bar and a cap between a picture and the names of the
+        #: things in it. Centred, it reads as the plot's caption instead.
+        self.show_key = show_key
+        self.show_distance = show_distance
         self.observer = ephemeris.Observer.from_environment()
         self.positions: Dict[str, Tuple[float, float]] = {}
         self.moon_longitude: float = 0.0
+        self.moon_distance_km: float = 0.0
         # Stable per-instance key so two orreries in one layout get separate
         # kitty image ids instead of overwriting each other's plot.
         self.image_key = "orrery-%d" % id(self)
@@ -94,6 +103,10 @@ class OrreryWidget(Widget):
         self.positions = ephemeris.heliocentric_longitudes(jd, self.bodies)
         if self.show_moon:
             self.moon_longitude = ephemeris.moon_geocentric_longitude(jd)
+            # The key reports the moon's distance from the planet it orbits;
+            # its heliocentric distance is Earth's and says nothing.
+            self.moon_distance_km = ephemeris.moon_state(
+                ephemeris.Observer("KEY", 0.0, 0.0), jd).distance_km
 
     def chrome(self) -> WidgetChrome:
         return WidgetChrome(
@@ -102,11 +115,148 @@ class OrreryWidget(Widget):
             chips=(Chip("HELIOCENTRIC", style=ChipStyle.COLOR),),
         )
 
+
+    # -- the key ----------------------------------------------------------
+
+    #: Clear columns between one key entry and the next.
+    KEY_ENTRY_GAP = 2
+
+    #: Rows the key strip takes, and the most of the pane it may take. A plot
+    #: squeezed under its own legend is the wrong way round.
+    KEY_ROWS = 9
+    KEY_MAX_SHARE = 3
+
+    #: Blank rows between the plot and the key. This is the whole separation:
+    #: no bar, no rule, just the space.
+    KEY_GAP_ROWS = 1
+
+    @property
+    def key_bodies(self) -> Tuple[str, ...]:
+        """Everything the plot draws, in the order it is drawn -- sun outward.
+
+        The key exists to explain the picture, so it lists exactly what the
+        picture contains. Leaving out the sun and the moon made it a key to the
+        planets rather than to the plot.
+        """
+        listed: List[str] = ["SUN"]
+        for name in self.bodies:
+            listed.append(name)
+            # Luna belongs beside its parent, not at the end of a list sorted
+            # by distance from the sun -- which is where its heliocentric
+            # distance would put it, indistinguishable from Earth's.
+            if name == "EARTH" and self.show_moon:
+                listed.append("LUNA")
+        return tuple(listed)
+
+    def _key_value(self, name: str) -> str:
+        """The distance column. Units differ by body, and are written out."""
+        if name == "SUN":
+            return "CENTRE"
+        if name == "LUNA":
+            return "%s KM" % format(int(self.moon_distance_km), ",")
+        return "%.2f AU" % self.positions.get(name, (0.0, 0.0))[1]
+
+    def _key_grid(self, rect: Rect):
+        """Where every entry lands, and the box they occupy together.
+
+        Split out of the drawing because the geometry has to be answerable
+        without drawing it: centring the key against the plot needs the box the
+        key ACTUALLY fills, and so does anything checking that alignment.
+
+        Returns ``(entries, per_column, column_width, bounds)``, or None when
+        the strip is too narrow to be worth drawing in.
+        """
+        if not rect or rect.height < 1:
+            return None
+        if not self.positions:
+            self.refresh()
+
+        entries = [(name, plots.SYMBOLS.get(name) or "",
+                    self._key_value(name) if self.show_distance else "")
+                   for name in self.key_bodies]
+        name_width = max(len(name) for name, _, _ in entries)
+        value_width = max((len(value) for _, _, value in entries), default=0)
+        entry_width = 2 + name_width + (value_width + 2 if value_width else 0)
+
+        # Flow into as many columns as the strip can hold, so a fifteen-body
+        # key is three rows rather than fifteen.
+        slots = max(1, min(len(entries),
+                           (rect.width + self.KEY_ENTRY_GAP)
+                           // (entry_width + self.KEY_ENTRY_GAP)))
+        while slots < len(entries) and -(-len(entries) // slots) > rect.height:
+            slots += 1
+        per_column = -(-len(entries) // slots)
+        # How many columns the entries FILL, which is not how many would fit:
+        # fifteen entries three deep occupy five columns whether the strip has
+        # room for five or for nine. Centring on the fitting count is what makes
+        # a centred key look left-aligned.
+        columns = -(-len(entries) // per_column)
+        column_width = min(entry_width,
+                           (rect.width - self.KEY_ENTRY_GAP * (columns - 1)) // columns)
+        if column_width < 6:
+            return None
+
+        width = columns * column_width + self.KEY_ENTRY_GAP * (columns - 1)
+        left = rect.x + max(0, (rect.width - width) // 2)
+        return (entries, per_column, column_width,
+                Rect(left, rect.y, width, min(per_column, rect.height)))
+
+    def key_bounds(self, rect: Rect) -> Optional[Rect]:
+        """The box the key fills inside the pane, before drawing it.
+
+        ``rect`` is the whole pane, as passed to :meth:`render`.
+        """
+        grid = self._key_grid(self._key_strip(rect))
+        return grid[3] if grid else None
+
+    def _key_strip(self, rect: Rect) -> Rect:
+        """The strip along the bottom of the pane the key draws into."""
+        rows = min(self.KEY_ROWS, max(0, rect.height // self.KEY_MAX_SHARE))
+        return Rect(rect.x, rect.bottom - rows, rect.width, rows)
+
+    def _render_key(self, painter: Painter, rect: Rect) -> None:
+        grid = self._key_grid(rect)
+        if grid is None:
+            return
+        entries, per_column, column_width, box = grid
+        canvas = painter.canvas
+        name_width = max(len(name) for name, _, _ in entries)
+        value_width = max((len(value) for _, _, value in entries), default=0)
+
+        for index, (name, glyph, value) in enumerate(entries):
+            column, row = divmod(index, per_column)
+            x = box.x + column * (column_width + self.KEY_ENTRY_GAP)
+            y = rect.y + row
+            if y >= rect.bottom or x + column_width > rect.right + self.KEY_ENTRY_GAP:
+                continue
+            body_color = BODY_COLORS.get(name, TEXT)
+            if glyph:
+                canvas.put(x, y, glyph, foreground=body_color, bold=True)
+            canvas.text(x + 2, y, name, foreground=body_color,
+                        max_width=column_width - 2)
+            if value and column_width >= name_width + value_width + 3:
+                canvas.text_right(x + column_width, y, value,
+                                  foreground=DIM_VIOLET)
+
     def render(self, painter: Painter, rect: Rect) -> None:
         if not rect or rect.width < 12 or rect.height < 7:
             return
         if not self.positions:
             self.refresh()
+
+        # The key takes a strip along the bottom; the plot takes what is left.
+        # Both are the pane's full width, so the centred key stands on the
+        # plot's own midline.
+        plot_rect = rect
+        if self.show_key:
+            strip = self._key_strip(rect)
+            if strip.height:
+                plot_rect = Rect(rect.x, rect.y, rect.width,
+                                 max(0, strip.y - self.KEY_GAP_ROWS - rect.y))
+                self._render_key(painter, strip)
+        if plot_rect.height < 5:
+            return
+        rect = plot_rect
 
         bodies = [(name, *self.positions[name])
                   for name in self.bodies if name in self.positions]
@@ -212,130 +362,6 @@ class SkyWidget(Widget):
             painter.canvas.text_right(
                 rect.right, y, detail,
                 foreground=TEXT if body.is_up else STEM_DIM)
-
-
-class OrreryKeyWidget(Widget):
-    """Legend for the orrery: each body's symbol, name and distance.
-
-    The orrery draws its symbols into a PNG, where a missing font would show a
-    tofu box in the middle of the plot. Here they are terminal cells, so kitty's
-    own font fallback finds them -- the same Noto Sans Symbols 2 that carries
-    Eris and the Unicode 15 dwarf-planet glyphs. A body whose symbol the terminal
-    cannot draw falls back to letters, matching the plot's own rule.
-    """
-
-    refresh_interval = 300.0
-
-    #: Clear columns between one key entry and the next.
-    ENTRY_GAP = 2
-
-    def __init__(
-        self,
-        title: str = "KEY",
-        color: Color = SKY,
-        minor_planets: bool = True,
-        show_distance: bool = True,
-        include_sun: bool = True,
-        include_moon: bool = True,
-    ) -> None:
-        super().__init__(title=title, color=color)
-        self.minor_planets = minor_planets
-        self.show_distance = show_distance
-        self.include_sun = include_sun
-        self.include_moon = include_moon
-        self.positions: Dict[str, Tuple[float, float]] = {}
-        self.moon_distance_km: float = 0.0
-
-    @property
-    def bodies(self) -> Tuple[str, ...]:
-        """Everything the orrery draws, in the order it is drawn -- sun outward.
-
-        The key exists to explain the plot, so it has to list exactly what the
-        plot contains. Leaving out the sun and the moon made it a key to the
-        planets rather than to the picture.
-        """
-        names = ephemeris.PLANET_ORDER
-        if self.minor_planets:
-            names = tuple(sorted(names + ephemeris.MINOR_PLANET_ORDER,
-                                 key=ephemeris.mean_distance))
-        listed: List[str] = ["SUN"] if self.include_sun else []
-        for name in names:
-            listed.append(name)
-            # Luna belongs beside its parent, not at the end of a list sorted by
-            # distance from the sun -- which is where its heliocentric distance
-            # would otherwise put it, indistinguishable from Earth's.
-            if name == "EARTH" and self.include_moon:
-                listed.append("LUNA")
-        return tuple(listed)
-
-    def refresh(self) -> None:
-        jd = ephemeris.julian_day()
-        orbiting = tuple(n for n in self.bodies if n not in ("SUN", "LUNA"))
-        self.positions = ephemeris.heliocentric_longitudes(jd, orbiting)
-        if self.include_moon:
-            self.moon_distance_km = ephemeris.moon_state(
-                ephemeris.Observer("KEY", 0.0, 0.0), jd).distance_km
-
-    def chrome(self) -> WidgetChrome:
-        return WidgetChrome(
-            title=self.title,
-            color=self.color,
-            chips=(Chip("%02d-BODIES" % len(self.bodies), SAGE, ChipStyle.COLOR),),
-        )
-
-    def _value(self, name: str) -> str:
-        """The distance column. Units differ by body, and are written out."""
-        if name == "SUN":
-            return "CENTRE"
-        if name == "LUNA":
-            # The moon's distance from the sun is Earth's; what matters is how
-            # far it is from the planet it orbits.
-            return "%s KM" % format(int(self.moon_distance_km), ",")
-        return "%.2f AU" % self.positions.get(name, (0.0, 0.0))[1]
-
-    def render(self, painter: Painter, rect: Rect) -> None:
-        if not rect:
-            return
-        if not self.positions:
-            self.refresh()
-
-        canvas = painter.canvas
-        entries = [(name, plots.SYMBOLS.get(name) or "",
-                    self._value(name) if self.show_distance else "")
-                   for name in self.bodies]
-
-        name_width = max(len(name) for name, _, _ in entries)
-        value_width = max((len(value) for _, _, value in entries), default=0)
-        entry_width = 2 + name_width + (value_width + 2 if value_width else 0)
-
-        # Flow into as many columns as the pane can hold, so a fifteen-body key
-        # is eight rows rather than fifteen. Listing them one per row is what
-        # pushed the minor planets off the bottom of a short pane.
-        columns = max(1, min(len(entries),
-                             (rect.width + self.ENTRY_GAP)
-                             // (entry_width + self.ENTRY_GAP)))
-        while columns < len(entries) and -(-len(entries) // columns) > rect.height:
-            columns += 1
-        per_column = -(-len(entries) // columns)
-        column_width = min(entry_width,
-                           (rect.width - self.ENTRY_GAP * (columns - 1)) // columns)
-        if column_width < 6:
-            return
-
-        for index, (name, glyph, value) in enumerate(entries):
-            column, row = divmod(index, per_column)
-            x = rect.x + column * (column_width + self.ENTRY_GAP)
-            y = rect.y + row
-            if y >= rect.bottom or x + column_width > rect.right + self.ENTRY_GAP:
-                continue
-            body_color = BODY_COLORS.get(name, TEXT)
-            if glyph:
-                canvas.put(x, y, glyph, foreground=body_color, bold=True)
-            canvas.text(x + 2, y, name, foreground=body_color,
-                        max_width=column_width - 2)
-            if value and column_width >= name_width + value_width + 3:
-                canvas.text_right(x + column_width, y, value,
-                                  foreground=DIM_VIOLET)
 
 
 class MoonWidget(FramedImageWidget):

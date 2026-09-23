@@ -30,7 +30,8 @@ lcarcat/
 │   ├── sources/                — Jira, GitHub, ephemeris, system telemetry
 │   └── layouts.py              — named arrangements of widgets into panels
 ├── generate/
-│   └── gen_swoops.py           — PNG asset generator (Pillow); deployed to ~/.config/kitty/lcars/
+│   ├── gen_swoops.py           — curve PNGs (elbows, caps, swoops); deployed to ~/.config/kitty/lcars/
+│   └── gen_block_text.py       — bar-height block-letter labels, baked to PNG
 ├── assets/                     — pre-built PNGs for zsh prompt at 19×38 device px per cell
 ├── docs/                       — engineering reference docs (this directory)
 ├── test/
@@ -107,6 +108,7 @@ corner-top-left-9999ff-background000000-3x2cells-19x38pixels.png
 | Look up nvim API behaviour or plugin capability for the terminal frame | [`docs/nvim-terminal-research.md`](nvim-terminal-research.md) |
 | Write ANSI output into a `modifiable=false` display buffer (baleia) | [`docs/spike-2-baleia-findings.md`](spike-2-baleia-findings.md) |
 | Work on the LCARS dashboard, or reuse its segment library | [`docs/dashboard.md`](dashboard.md) |
+| Put a title, chip or rail block in a bar | [`docs/lcars-design.md`](lcars-design.md) for the rules, [`docs/dashboard.md`](dashboard.md) for the drawing |
 | Make something clickable, or read the mouse | [`docs/dashboard.md`](dashboard.md) — "Interaction" |
 | Change the kitty tab bar | [`docs/dashboard.md`](dashboard.md) — "The tab bar"; [`docs/kitty-tab-bar.md`](kitty-tab-bar.md) for kitty's limits there (no images), reloading, and testing |
 | Understand why a design decision was made under an epic | [`docs/architecture-decisions.md`](architecture-decisions.md) |

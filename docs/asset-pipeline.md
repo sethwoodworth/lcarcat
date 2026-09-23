@@ -2,6 +2,11 @@
 
 How LCARS PNG assets are generated, named, cached, and regenerated at runtime.
 
+Two generators, because this codebase draws a PNG only where cells cannot do the
+job: `gen_swoops.py` for the shapes that curve (elbow, cap, swoop, corner), and
+`gen_block_text.py` for labels taller than one cell. Everything else is terminal
+cells.
+
 ---
 
 ## gen_swoops.py
@@ -11,6 +16,22 @@ How LCARS PNG assets are generated, named, cached, and regenerated at runtime.
 ```bash
 uv run --with pillow generate/gen_swoops.py [options]
 ```
+
+### gen_block_text.py
+
+`generate/gen_block_text.py` renders a label at bar height — Antonio at weight
+700 by default, sized by CAP height rather than line height so an all-caps label
+sits centred instead of riding high, letterspaced, supersampled 4x, and rounded
+to an exact multiple of the cell box. The caller chooses the colours: a label cut
+into a bar takes the LCARS void as its ground and the bar's accent for the
+glyphs. `PAD_COLUMNS` keeps a whole cell of ground either side of the letters.
+
+```bash
+uv run --with pillow generate/gen_block_text.py --text "STELLAR CARTOGRAPHY"
+```
+
+It costs about two columns per character against one for cell text, which is why
+callers shorten rather than clip — see `dashboard/labels.py`.
 
 ### Shape types produced
 

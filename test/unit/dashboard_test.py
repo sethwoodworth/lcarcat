@@ -208,6 +208,67 @@ class LabelLadderTest(unittest.TestCase):
         self.assertIsNone(labels.fit("PULL REQUESTS", len, 1))
 
 
+class RailBlockTest(unittest.TestCase):
+    """Vertical chips: spaced like chips, coloured by position."""
+
+    HEIGHT = 30
+
+    def _column(self, blocks):
+        import io
+
+        from dashboard.assets import AssetLibrary, CellSize
+        from dashboard.canvas import Canvas
+        from dashboard.images import ImageTransmitter
+        from dashboard.palette import PERIWINKLE
+        from dashboard.segments import Painter, draw_rail
+
+        canvas = Canvas(4, self.HEIGHT)
+        painter = Painter(canvas, AssetLibrary(CellSize(19, 38)),
+                          ImageTransmitter(io.StringIO()), images_enabled=False)
+        draw_rail(painter, Rect(0, 0, 2, self.HEIGHT), PERIWINKLE, blocks)
+        return [canvas.cell(0, y).background for y in range(self.HEIGHT)]
+
+    def test_a_gap_at_both_ends_not_just_between(self):
+        from dashboard.palette import CANVAS
+        from dashboard.segments import RailBlock
+
+        column = self._column((RailBlock("A", weight=1), RailBlock("B", weight=1)))
+        self.assertEqual(column[0], CANVAS, "the rail starts with a gap")
+        self.assertEqual(column[-1], CANVAS, "and ends with one")
+        self.assertIn(CANVAS, column[1:-1], "with one between the blocks too")
+
+    def test_colours_come_from_the_accent_sequence_in_order(self):
+        from dashboard.palette import CANVAS, accent
+        from dashboard.segments import RailBlock
+
+        column = self._column(tuple(RailBlock("B%d" % i, weight=1) for i in range(3)))
+        runs = []
+        for colour in column:
+            if colour != CANVAS and (not runs or runs[-1] != colour):
+                runs.append(colour)
+        self.assertEqual(runs, [accent(0), accent(1), accent(2)])
+
+    def test_a_block_may_still_name_its_own_colour(self):
+        from dashboard.palette import CANVAS, ORANGE, accent
+        from dashboard.segments import RailBlock
+
+        column = self._column((RailBlock("A", weight=1),
+                               RailBlock("B", color=ORANGE, weight=1)))
+        runs = []
+        for colour in column:
+            if colour != CANVAS and (not runs or runs[-1] != colour):
+                runs.append(colour)
+        self.assertEqual(runs, [accent(0), ORANGE],
+                         "a block that carries meaning departs from the sequence")
+
+    def test_a_rail_with_no_blocks_is_a_solid_stem(self):
+        from dashboard.palette import CANVAS
+
+        column = self._column(())
+        self.assertNotIn(CANVAS, column,
+                         "a plain stem is continuous with the elbows above and below")
+
+
 class ChipSideTest(unittest.TestCase):
     """Chips pack against the cap side, and shed from the elbow side."""
 
@@ -819,12 +880,21 @@ class NavigationTest(unittest.TestCase):
             labels = {block.label for block in blocks}
             self.assertEqual(len(blocks), len(layouts.names()),
                              "%s rail does not list every layout" % name)
-            self.assertIn(name.upper().replace("-", " "), labels)
+            # The rail calls each layout by its short name -- a rail is only a
+            # few columns wide -- so it lists rail_name, not the full one.
+            self.assertEqual(labels,
+                             {layouts.build(other).rail_name for other in layouts.names()})
+            self.assertIn(layout.rail_name, labels)
 
             # The current layout is lit and inert; every other is clickable.
             inert = [b for b in blocks if b.action is None]
-            self.assertEqual([b.label for b in inert],
-                             [name.upper().replace("-", " ")])
+            self.assertEqual([b.label for b in inert], [layout.rail_name])
+            # Lit means: a different colour from every other block, which all
+            # carry the frame's own.
+            lit = [b for b in blocks if b.action is None][0]
+            others = {b.color for b in blocks if b.action is not None}
+            self.assertEqual(others, {layout.frame_color})
+            self.assertNotIn(lit.color, others)
             for block in blocks:
                 if block.action is not None:
                     block.action(None)  # type: ignore[arg-type]
